@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Reliable Call + Transcription</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      margin: 0;
+      padding: 16px;
+      max-width: 480px;
+      margin: 0 auto;
+    }
+    h1 { color: #38bdf8; font-size: 1.3rem; margin-bottom: 4px; }
+    .sub { color: #94a3b8; font-size: 0.88rem; margin-bottom: 16px; }
+    .status {
+      background: #1e293b;
+      padding: 12px;
+      border-radius: 10px;
+      margin-bottom: 14px;
+      border-left: 4px solid #38bdf8;
+      font-size: 0.92rem;
+    }
+    .card {
+      background: #1e293b;
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 14px;
+    }
+    label {
+      display: block;
+      font-size: 0.88rem;
+      color: #94a3b8;
+      margin-bottom: 6px;
+    }
+    textarea {
+      width: 100%;
+      height: 85px;
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid #334155;
+      background: #0f172a;
+      color: #e2e8f0;
+      font-size: 0.85rem;
+      resize: none;
+      margin-bottom: 8px;
+    }
+    button {
+      width: 100%;
+      padding: 13px;
+      border: none;
+      border-radius: 10px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin: 5px 0;
+      cursor: pointer;
+    }
+    .btn-blue { background: #0ea5e9; color: white; }
+    .btn-green { background: #22c55e; color: white; }
+    .btn-orange { background: #f59e0b; color: white; }
+    .btn-red { background: #ef4444; color: white; }
+    .btn-gray { background: #334155; color: white; }
+    #transcript {
+      background: #1e293b;
+      height: 240px;
+      overflow-y: auto;
+      padding: 12px;
+      border-radius: 10px;
+      font-size: 0.9rem;
+      line-height: 1.45;
+    }
+    .me { color: #38bdf8; margin: 7px 0; }
+    .other { color: #4ade80; margin: 7px 0; }
+    .step {
+      font-size: 0.85rem;
+      color: #94a3b8;
+      margin-bottom: 8px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Reliable Audio Call + Transcription</h1>
+  <p class="sub">Laptop + Mobile friendly version</p>
+
+  <div class="status" id="status">Status: Ready</div>
+
+  <!-- HOST -->
+  <div class="card">
+    <div class="step">STEP 1 — Host (Laptop)</div>
+    <button class="btn-blue" onclick="createOffer()">1. Create Offer Code</button>
+    <label>Offer Code (Copy & send to mobile)</label>
+    <textarea id="offerText" readonly placeholder="Offer will appear here..."></textarea>
+    <button class="btn-gray" onclick="copyText('offerText')">Copy Offer</button>
+  </div>
+
+  <!-- GUEST -->
+  <div class="card">
+    <div class="step">STEP 2 — Guest (Mobile)</div>
+    <label>Paste Offer Code here</label>
+    <textarea id="remoteOffer" placeholder="Paste Offer code from laptop..."></textarea>
+    <button class="btn-green" onclick="createAnswer()">2. Create Answer Code</button>
+    <label>Answer Code (Copy & send back to laptop)</label>
+    <textarea id="answerText" readonly placeholder="Answer will appear here..."></textarea>
+    <button class="btn-gray" onclick="copyText('answerText')">Copy Answer</button>
+  </div>
+
+  <!-- HOST ACCEPT -->
+  <div class="card">
+    <div class="step">STEP 3 — Host (Laptop)</div>
+    <label>Paste Answer Code here</label>
+    <textarea id="remoteAnswer" placeholder="Paste Answer code from mobile..."></textarea>
+    <button class="btn-orange" onclick="acceptAnswer()">3. Connect Now</button>
+  </div>
+
+  <button class="btn-green" id="transBtn" onclick="startTranscription()" disabled>
+    Start Live Transcription
+  </button>
+  <button class="btn-red" onclick="endCall()">End Call</button>
+
+  <h3 style="margin: 18px 0 8px; font-size: 1rem;">Live Transcript</h3>
+  <div id="transcript">
+    <p style="color:#64748b">Waiting for connection...</p>
+  </div>
+
+  <script>
+    let pc = null;
+    let localStream = null;
+    let dataChannel = null;
+    let recognition = null;
+
+    const servers = {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+      ]
+    };
+
+    function updateStatus(msg) {
+      document.getElementById('status').innerText = "Status: " + msg;
+    }
+
+    async function getMic() {
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: false
+        });
+        return true;
+      } catch (e) {
+        alert("Microphone permission denied. Please allow it.");
+        return false;
+      }
+    }
+
+    // ========== CREATE OFFER (Laptop) ==========
+    async function createOffer() {
+      if (!(await getMic())) return;
+
+      pc = new RTCPeerConnection(servers);
+
+      localStream.getTracks().forEach(track => {
+        pc.addTrack(track, localStream);
+      });
+
+      dataChannel = pc.createDataChannel("chat");
+      setupDataChannel(dataChannel);
+
+      pc.ontrack = (e) => {
+        const audio = new Audio();
+        audio.srcObject = e.streams[0];
+        audio.play().catch(()=>{});
+        updateStatus("✅ Connected! You can talk");
+        document.getElementById('transBtn').disabled = false;
+      };
+
+      // Important for mobile: show offer even before ICE finishes
+      pc.onicecandidate = (event) => {
+        // Keep updating the offer as candidates come
+        document.getElementById('offerText').value = JSON.stringify(pc.localDescription);
+      };
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      // Show immediately
+      document.getElementById('offerText').value = JSON.stringify(pc.localDescription);
+      updateStatus("Offer created — Copy and send to mobile");
+    }
+
+    // ========== CREATE ANSWER (Mobile) ==========
+    async function createAnswer() {
+      const offerStr = document.getElementById('remoteOffer').value.trim();
+      if (!offerStr) {
+        alert("Please paste the Offer code first");
+        return;
+      }
+
+      if (!(await getMic())) return;
+
+      pc = new RTCPeerConnection(servers);
+
+      localStream.getTracks().forEach(track => {
+        pc.addTrack(track, localStream);
+      });
+
+      pc.ondatachannel = (event) => {
+        dataChannel = event.channel;
+        setupDataChannel(dataChannel);
+      };
+
+      pc.ontrack = (e) => {
+        const audio = new Audio();
+        audio.srcObject = e.streams[0];
+        audio.play().catch(()=>{});
+        updateStatus("✅ Connected! You can talk");
+        document.getElementById('transBtn').disabled = false;
+      };
+
+      // This is the important fix for mobile
+      pc.onicecandidate = (event) => {
+        document.getElementById('answerText').value = JSON.stringify(pc.localDescription);
+      };
+
+      try {
+        const offer = JSON.parse(offerStr);
+        await pc.setRemoteDescription(offer);
+
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+
+        // Show Answer immediately (this fixes mobile issue)
+        document.getElementById('answerText').value = JSON.stringify(pc.localDescription);
+        updateStatus("Answer created — Copy and send back to laptop");
+
+      } catch (err) {
+        alert("Invalid Offer code. Make sure you copied the complete code.");
+        console.error(err);
+        updateStatus("Error: Invalid Offer code");
+      }
+    }
+
+    // ========== ACCEPT ANSWER (Laptop) ==========
+    async function acceptAnswer() {
+      const answerStr = document.getElementById('remoteAnswer').value.trim();
+      if (!answerStr) {
+        alert("Please paste the Answer code");
+        return;
+      }
+
+      try {
+        const answer = JSON.parse(answerStr);
+        await pc.setRemoteDescription(answer);
+        updateStatus("Connecting... please wait");
+      } catch (err) {
+        alert("Invalid Answer code");
+        updateStatus("Error: Invalid Answer code");
+      }
+    }
+
+    function setupDataChannel(channel) {
+      channel.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'transcript') {
+            addMessage(data.text, 'other');
+          }
+        } catch(e) {}
+      };
+    }
+
+    // ========== TRANSCRIPTION ==========
+    function startTranscription() {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) {
+        alert("Please use Chrome browser");
+        return;
+      }
+
+      recognition = new SR();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-IN';
+
+      recognition.onresult = (event) => {
+        let final = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          if (event.results[i].isFinal) {
+            final += event.results[i][0].transcript + ' ';
+          }
+        }
+        if (final.trim()) {
+          addMessage(final, 'me');
+          if (dataChannel && dataChannel.readyState === 'open') {
+            dataChannel.send(JSON.stringify({ type: 'transcript', text: final }));
+          }
+        }
+      };
+
+      recognition.onend = () => {
+        if (recognition) {
+          try { recognition.start(); } catch(e) {}
+        }
+      };
+
+      recognition.start();
+      updateStatus("Transcription is running...");
+      document.getElementById('transBtn').disabled = true;
+    }
+
+    function addMessage(text, who) {
+      const box = document.getElementById('transcript');
+      if (box.querySelector('p')) box.innerHTML = '';
+      const div = document.createElement('div');
+      div.className = who;
+      div.innerHTML = `<b>${who === 'me' ? 'You' : 'Other'}:</b> ${text}`;
+      box.appendChild(div);
+      box.scrollTop = box.scrollHeight;
+    }
+
+    function copyText(id) {
+      const el = document.getElementById(id);
+      el.select();
+      el.setSelectionRange(0, 99999);
+      document.execCommand('copy');
+      alert("Copied!");
+    }
+
+    function endCall() {
+      if (recognition) recognition.stop();
+      if (localStream) localStream.getTracks().forEach(t => t.stop());
+      if (pc) pc.close();
+      updateStatus("Call ended");
+      document.getElementById('transBtn').disabled = true;
+    }
+  </script>
+</body>
+</html>
