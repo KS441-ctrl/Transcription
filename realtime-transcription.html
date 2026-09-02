@@ -1,756 +1,926 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Real-Time Call Transcription</title>
-  <script src="https://cdn.jsdelivr.net/npm/simple-peer@9.11.1/simplepeer.min.js"></script>
-  <style>
-    * {
-      box-sizing: border-box;
-    }
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Real-Time Call Transcription</title>
+    <script src="https://cdn.jsdelivr.net/npm/simple-peer@9.11.1/simplepeer.min.js"></script>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
 
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
-      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-      color: #e2e8f0;
-      margin: 0;
-      padding: 12px;
-      max-width: 900px;
-      margin: 0 auto;
-    }
+      body {
+        font-family: Georgia, "Times New Roman", serif;
+        background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+        color: #e2e8f0;
+        margin: 0;
+        padding: 10px;
+        max-width: 1180px;
+        margin: 0 auto;
+      }
 
-    .container {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 16px;
-      margin-bottom: 16px;
-    }
-
-    @media (max-width: 768px) {
       .container {
-        grid-template-columns: 1fr;
+        display: grid;
+        grid-template-columns: 285px minmax(0, 1fr);
+        gap: 12px;
+        margin-bottom: 16px;
       }
-    }
 
-    .panel {
-      background: #1e293b;
-      border-radius: 12px;
-      padding: 16px;
-      border: 1px solid #334155;
-    }
+      @media (max-width: 768px) {
+        .container {
+          grid-template-columns: 1fr;
+        }
 
-    h1 {
-      color: #38bdf8;
-      margin: 0 0 8px 0;
-      font-size: 1.5rem;
-    }
+        .transcript-panel {
+          grid-column: 1;
+          grid-row: 1;
+        }
 
-    h2 {
-      color: #38bdf8;
-      font-size: 1rem;
-      margin: 12px 0 8px 0;
-    }
-
-    .setup-section {
-      margin-bottom: 16px;
-    }
-
-    label {
-      display: block;
-      font-size: 0.85rem;
-      color: #94a3b8;
-      margin-bottom: 4px;
-      font-weight: 500;
-    }
-
-    input,
-    textarea {
-      width: 100%;
-      padding: 8px;
-      border-radius: 6px;
-      border: 1px solid #334155;
-      background: #0f172a;
-      color: #e2e8f0;
-      font-size: 0.85rem;
-      font-family: 'Courier New', monospace;
-      margin-bottom: 8px;
-    }
-
-    button {
-      background: #3b82f6;
-      color: white;
-      border: none;
-      padding: 10px 16px;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 0.9rem;
-      font-weight: 500;
-      width: 100%;
-      transition: background 0.2s;
-    }
-
-    button:hover {
-      background: #2563eb;
-    }
-
-    button:disabled {
-      background: #475569;
-      cursor: not-allowed;
-    }
-
-    .button-group {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-    }
-
-    .status-badge {
-      display: inline-block;
-      padding: 4px 12px;
-      border-radius: 12px;
-      font-size: 0.8rem;
-      font-weight: 500;
-      margin-bottom: 12px;
-    }
-
-    .status-badge.connected {
-      background: #10b981;
-      color: white;
-    }
-
-    .status-badge.disconnected {
-      background: #ef4444;
-      color: white;
-    }
-
-    .status-badge.listening {
-      background: #f59e0b;
-      color: white;
-    }
-
-    .transcription-box {
-      background: #0f172a;
-      border-radius: 8px;
-      padding: 12px;
-      height: 300px;
-      overflow-y: auto;
-      border: 1px solid #334155;
-      margin-bottom: 12px;
-      font-size: 0.85rem;
-      line-height: 1.5;
-    }
-
-    .transcript-entry {
-      margin-bottom: 12px;
-      padding-bottom: 8px;
-      border-bottom: 1px solid #334155;
-    }
-
-    .transcript-entry:last-child {
-      border-bottom: none;
-    }
-
-    .speaker-name {
-      color: #38bdf8;
-      font-weight: 500;
-      font-size: 0.8rem;
-      margin-bottom: 2px;
-    }
-
-    .transcript-text {
-      color: #e2e8f0;
-    }
-
-    .transcript-partial {
-      color: #94a3b8;
-      font-style: italic;
-    }
-
-    .info-box {
-      background: #1e293b;
-      border-left: 4px solid #38bdf8;
-      padding: 12px;
-      border-radius: 4px;
-      font-size: 0.85rem;
-      color: #cbd5e1;
-      margin-bottom: 12px;
-    }
-
-    .error-box {
-      background: #7f1d1d;
-      border-left: 4px solid #ef4444;
-      padding: 12px;
-      border-radius: 4px;
-      font-size: 0.85rem;
-      color: #fecaca;
-      margin-bottom: 12px;
-    }
-
-    .icon {
-      display: inline-block;
-      margin-right: 6px;
-    }
-
-    .signal-indicator {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      font-size: 0.8rem;
-    }
-
-    .signal-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      animation: pulse 1s infinite;
-    }
-
-    .signal-dot.active {
-      background: #10b981;
-    }
-
-    .signal-dot.inactive {
-      background: #64748b;
-      animation: none;
-    }
-
-    @keyframes pulse {
-      0%, 100% {
-        opacity: 1;
+        .controls-panel {
+          grid-column: 1;
+          grid-row: 2;
+        }
       }
-      50% {
-        opacity: 0.5;
+
+      .panel {
+        background: #1e293b;
+        border-radius: 8px;
+        padding: 12px;
+        border: 1px solid #334155;
       }
-    }
 
-    .volume-indicator {
-      width: 100%;
-      height: 4px;
-      background: #0f172a;
-      border-radius: 2px;
-      overflow: hidden;
-      margin-top: 4px;
-    }
+      h1 {
+        color: #38bdf8;
+        margin: 0;
+        font-size: 1.3rem;
+      }
 
-    .volume-bar {
-      height: 100%;
-      background: linear-gradient(90deg, #10b981, #3b82f6);
-      width: 0%;
-      transition: width 0.1s;
-    }
+      h2 {
+        color: #38bdf8;
+        font-size: 0.95rem;
+        margin: 8px 0 6px 0;
+      }
 
-    .footer {
-      text-align: center;
-      color: #64748b;
-      font-size: 0.8rem;
-      margin-top: 20px;
-      padding-top: 16px;
-      border-top: 1px solid #334155;
-    }
+      .setup-section {
+        margin-bottom: 16px;
+      }
 
-    .setup-step {
-      background: #0f172a;
-      padding: 12px;
-      border-radius: 6px;
-      margin-bottom: 8px;
-      border-left: 3px solid #38bdf8;
-    }
+      label {
+        display: block;
+        font-size: 0.85rem;
+        color: #94a3b8;
+        margin-bottom: 4px;
+        font-weight: 500;
+      }
 
-    .step-number {
-      color: #38bdf8;
-      font-weight: bold;
-      margin-right: 8px;
-    }
-  </style>
-</head>
+      input,
+      textarea {
+        width: 100%;
+        padding: 7px;
+        border-radius: 6px;
+        border: 1px solid #334155;
+        background: #0f172a;
+        color: #e2e8f0;
+        font-size: 0.85rem;
+        font-family: "Courier New", monospace;
+        margin-bottom: 8px;
+      }
 
-<body>
-  <div style="margin-bottom: 24px;">
-    <h1>🎙️ Real-Time Call Transcription</h1>
-    <p style="color: #94a3b8; margin: 8px 0 0 0;">
-      Connect with another person and get live transcription of the conversation
-    </p>
-  </div>
+      button {
+        background: #3b82f6;
+        color: white;
+        border: none;
+        padding: 10px 16px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 0.9rem;
+        font-weight: 500;
+        width: 100%;
+        transition: background 0.2s;
+      }
 
-  <div class="container">
-    <!-- Left Panel: Setup & Connection -->
-    <div class="panel">
-      <h2>📋 Setup</h2>
+      button:hover {
+        background: #2563eb;
+      }
 
-      <div class="setup-step">
-        <span class="step-number">1</span>Get your <strong>Deepgram API Key</strong>
-      </div>
-      <p style="font-size: 0.8rem; color: #94a3b8; margin: 8px 0;">
-        Sign up free at <a href="https://console.deepgram.com" target="_blank" style="color: #38bdf8;">console.deepgram.com</a>
-        (600 min/month free)
-      </p>
+      button:disabled {
+        background: #475569;
+        cursor: not-allowed;
+      }
 
-      <label>Your Name</label>
-      <input type="text" id="userName" placeholder="e.g., John" value="You">
+      .button-group {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
 
-      <label>Deepgram API Key</label>
-      <input type="password" id="deepgramKey" placeholder="sk-...">
+      .status-badge {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 12px;
+        font-size: 0.8rem;
+        font-weight: 500;
+        margin-bottom: 12px;
+      }
 
-      <button onclick="initializeTranscription()">🔑 Activate Transcription</button>
+      .status-badge.connected {
+        background: #10b981;
+        color: white;
+      }
 
-      <div style="margin-top: 12px;">
-        <div id="transcriptionStatus" class="status-badge disconnected">
-          <span class="icon">●</span> Not Connected
+      .status-badge.disconnected {
+        background: #ef4444;
+        color: white;
+      }
+
+      .status-badge.listening {
+        background: #f59e0b;
+        color: white;
+      }
+
+      .transcription-box {
+        background: #0f172a;
+        border-radius: 8px;
+        padding: 18px 22px;
+        height: calc(100vh - 155px);
+        min-height: 480px;
+        overflow-y: auto;
+        border: 1px solid #334155;
+        margin-bottom: 12px;
+        font-size: clamp(1.1rem, 2vw, 1.45rem);
+        line-height: 1.65;
+        scroll-behavior: smooth;
+        box-shadow: inset 0 18px 28px rgba(15, 23, 42, 0.35);
+      }
+
+      .transcript-entry {
+        margin-bottom: 18px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid #334155;
+      }
+
+      .transcript-entry:last-child {
+        border-bottom: none;
+      }
+
+      .speaker-name {
+        color: #38bdf8;
+        font-weight: 500;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-size: 0.72rem;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        margin-bottom: 2px;
+      }
+
+      .transcript-text {
+        color: #e2e8f0;
+      }
+
+      .transcript-partial {
+        color: #94a3b8;
+        font-style: italic;
+      }
+
+      .info-box {
+        background: #1e293b;
+        border-left: 4px solid #38bdf8;
+        padding: 12px;
+        border-radius: 4px;
+        font-size: 0.85rem;
+        color: #cbd5e1;
+        margin-bottom: 12px;
+      }
+
+      .error-box {
+        background: #7f1d1d;
+        border-left: 4px solid #ef4444;
+        padding: 12px;
+        border-radius: 4px;
+        font-size: 0.85rem;
+        color: #fecaca;
+        margin-bottom: 12px;
+      }
+
+      .icon {
+        display: inline-block;
+        margin-right: 6px;
+      }
+
+      .signal-indicator {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 0.8rem;
+      }
+
+      .signal-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        animation: pulse 1s infinite;
+      }
+
+      .signal-dot.active {
+        background: #10b981;
+      }
+
+      .signal-dot.inactive {
+        background: #64748b;
+        animation: none;
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.5;
+        }
+      }
+
+      .volume-indicator {
+        width: 100%;
+        height: 4px;
+        background: #0f172a;
+        border-radius: 2px;
+        overflow: hidden;
+        margin-top: 4px;
+      }
+
+      .volume-bar {
+        height: 100%;
+        background: linear-gradient(90deg, #10b981, #3b82f6);
+        width: 0%;
+        transition: width 0.1s;
+      }
+
+      .footer {
+        text-align: center;
+        color: #64748b;
+        font-size: 0.8rem;
+        margin-top: 20px;
+        padding-top: 16px;
+        border-top: 1px solid #334155;
+      }
+
+      .utility-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin: 8px 0;
+      }
+
+      .usage-strip {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 6px;
+        margin: 8px 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      .usage-item {
+        background: #0f172a;
+        border-radius: 5px;
+        padding: 7px;
+        font-size: 0.7rem;
+        color: #94a3b8;
+      }
+
+      .usage-item strong {
+        display: block;
+        color: #e2e8f0;
+        font-size: 0.75rem;
+        margin-bottom: 3px;
+      }
+
+      .code-label {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .code-input {
+        font-size: 1.15rem;
+        letter-spacing: 0.18em;
+        text-align: center;
+        font-weight: 700;
+      }
+
+      .transcript-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .transcript-header h2 {
+        font-size: 1.05rem;
+        margin: 0 0 8px;
+      }
+
+      .setup-step {
+        background: #0f172a;
+        padding: 12px;
+        border-radius: 6px;
+        margin-bottom: 8px;
+        border-left: 3px solid #38bdf8;
+      }
+
+      .step-number {
+        color: #38bdf8;
+        font-weight: bold;
+        margin-right: 8px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div style="margin-bottom: 10px">
+      <h1>🎙️ Real-Time Call Transcription</h1>
+    </div>
+
+    <div class="container">
+      <div class="panel controls-panel">
+        <h2>Call Controls</h2>
+
+        <label>Your name</label>
+        <input type="text" id="userName" placeholder="Your name" value="You" />
+
+        <div class="code-label">
+          <label>Your user ID</label>
+          <span style="font-size: 0.7rem; color: #64748b">Share this</span>
         </div>
-      </div>
+        <input
+          class="code-input"
+          type="text"
+          id="peerId"
+          readonly
+          placeholder="------" />
 
-      <div style="margin-top: 16px;">
-        <h2>🤝 Peer Connection</h2>
-        <label>Your Peer ID (Share this)</label>
-        <input type="text" id="peerId" readonly placeholder="Waiting for connection...">
+        <label>Connection ID</label>
+        <input
+          class="code-input"
+          type="text"
+          id="remotePeerId"
+          inputmode="numeric"
+          maxlength="6"
+          placeholder="123456" />
 
-        <label style="margin-top: 12px;">Peer's ID (Paste their ID)</label>
-        <input type="text" id="remotePeerId" placeholder="Paste peer's ID here">
-
-        <div class="button-group">
-          <button onclick="generateNewPeerId()">🔄 New ID</button>
-          <button onclick="connectToPeer()">🔗 Connect</button>
+        <div class="utility-row">
+          <button onclick="generateNewPeerId()">New ID</button>
+          <button onclick="connectToPeer()">Connect</button>
         </div>
 
-        <div id="connectionStatus" class="status-badge disconnected" style="margin-top: 12px;">
+        <div id="connectionStatus" class="status-badge disconnected">
           <span class="icon">●</span> Disconnected
         </div>
-      </div>
 
-      <div style="margin-top: 16px;">
-        <h2>🎤 Audio Control</h2>
-        <button id="micButton" onclick="toggleMicrophone()" disabled>🎙️ Allow Microphone</button>
-        <div style="margin-top: 8px;">
-          <label style="margin-bottom: 8px;">Microphone Level</label>
-          <div class="volume-indicator">
-            <div id="localVolume" class="volume-bar"></div>
+        <div class="usage-strip" aria-label="Transcription usage">
+          <div class="usage-item">
+            <strong id="deepgramUsage">--</strong>Deepgram left
+          </div>
+          <div class="usage-item"><strong>Unlimited</strong>Whisper left</div>
+          <div class="usage-item">
+            <strong id="activeEngine">Ready</strong>Active engine
           </div>
         </div>
-        <div id="micStatus" style="font-size: 0.8rem; color: #94a3b8; margin-top: 4px;">Waiting for setup...</div>
-      </div>
 
-      <div style="margin-top: 16px;">
-        <button onclick="endCall()" style="background: #ef4444;">🛑 End Call</button>
-      </div>
-    </div>
+        <input
+          type="password"
+          id="deepgramKey"
+          placeholder="Transcription API key"
+          aria-label="Transcription API key" />
+        <button onclick="initializeTranscription()">Start transcription</button>
 
-    <!-- Right Panel: Transcription Display -->
-    <div class="panel">
-      <h2>💬 Live Transcription</h2>
-      <div class="transcription-box" id="transcriptionDisplay">
-        <div style="color: #64748b; text-align: center; padding-top: 120px;">
-          Transcriptions will appear here once connected...
+        <div style="margin-top: 8px">
+          <button id="micButton" onclick="toggleMicrophone()" disabled>
+            🎙️ Microphone
+          </button>
+          <div style="margin-top: 6px">
+            <div class="volume-indicator">
+              <div id="localVolume" class="volume-bar"></div>
+            </div>
+          </div>
+          <div
+            id="micStatus"
+            style="font-size: 0.75rem; color: #94a3b8; margin-top: 4px">
+            Enable microphone to begin
+          </div>
+        </div>
+
+        <button
+          onclick="endCall()"
+          style="background: #ef4444; margin-top: 8px">
+          End Call
+        </button>
+
+        <div style="margin-top: 8px">
+          <div id="transcriptionStatus" class="status-badge disconnected">
+            <span class="icon">●</span> Not Connected
+          </div>
         </div>
       </div>
 
-      <label style="margin-top: 8px;">🔊 Remote Volume</label>
-      <div class="volume-indicator">
-        <div id="remoteVolume" class="volume-bar"></div>
-      </div>
+      <div class="panel transcript-panel">
+        <div class="transcript-header">
+          <h2>Live Transcription</h2>
+          <span class="signal-indicator"
+            ><span class="signal-dot inactive"></span> Live</span
+          >
+        </div>
+        <div class="transcription-box" id="transcriptionDisplay">
+          <div style="color: #64748b; text-align: center; padding-top: 120px">
+            Your conversation will appear here
+          </div>
+        </div>
 
-      <div id="errorDisplay" style="margin-top: 12px;"></div>
+        <label style="margin-top: 8px">🔊 Remote Volume</label>
+        <div class="volume-indicator">
+          <div id="remoteVolume" class="volume-bar"></div>
+        </div>
 
-      <div class="info-box">
-        <strong>✨ Features:</strong>
-        <ul style="margin: 8px 0 0 0; padding-left: 20px;">
-          <li>Real-time transcription powered by Deepgram</li>
-          <li>Works on mobile & desktop</li>
-          <li>Peer-to-peer audio (no server needed)</li>
-          <li>Privacy: Data not stored</li>
-        </ul>
+        <div id="errorDisplay" style="margin-top: 12px"></div>
       </div>
     </div>
-  </div>
 
-  <div class="footer">
-    <p>
-      Free tier: 600 minutes/month • <a href="https://deepgram.com/pricing" target="_blank" style="color: #38bdf8;">Pricing</a> • 
-      <a href="https://developers.deepgram.com" target="_blank" style="color: #38bdf8;">Docs</a>
-    </p>
-  </div>
+    <div class="footer">
+      <p>Audio call and live transcript</p>
+    </div>
 
-  <script>
-    // Global state
-    const state = {
-      peerId: null,
-      localStream: null,
-      peer: null,
-      remotePeerConnection: null,
-      deepgramSocket: null,
-      deepgramKey: null,
-      userName: 'You',
-      remoteUserName: 'Remote',
-      transcripts: [],
-      mediaRecorder: null,
-      audioContext: null,
-      analyser: null,
-      localAnalyser: null,
-      isConnected: false,
-      isMicEnabled: false,
-    };
+    <script>
+      // Global state
+      const state = {
+        peerId: null,
+        localStream: null,
+        peer: null,
+        remotePeerConnection: null,
+        deepgramSocket: null,
+        deepgramKey: null,
+        userName: "You",
+        remoteUserName: "Remote",
+        transcripts: [],
+        mediaRecorder: null,
+        audioContext: null,
+        analyser: null,
+        localAnalyser: null,
+        isConnected: false,
+        isMicEnabled: false,
+      };
 
-    // Generate unique peer ID
-    function generatePeerId() {
-      return 'peer_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
-    }
-
-    // Initialize on page load
-    window.addEventListener('load', function () {
-      state.peerId = generatePeerId();
-      document.getElementById('peerId').value = state.peerId;
-      console.log('Your Peer ID:', state.peerId);
-    });
-
-    function generateNewPeerId() {
-      state.peerId = generatePeerId();
-      document.getElementById('peerId').value = state.peerId;
-      alert('New ID generated: ' + state.peerId);
-    }
-
-    // Initialize Deepgram transcription
-    async function initializeTranscription() {
-      const key = document.getElementById('deepgramKey').value.trim();
-      const name = document.getElementById('userName').value.trim() || 'You';
-
-      if (!key) {
-        showError('Please enter your Deepgram API key');
-        return;
+      // Generate unique peer ID
+      function generatePeerId() {
+        return String(Math.floor(100000 + Math.random() * 900000));
       }
 
-      state.deepgramKey = key;
-      state.userName = name;
+      // Initialize on page load
+      window.addEventListener("load", function () {
+        state.peerId = generatePeerId();
+        document.getElementById("peerId").value = state.peerId;
+        console.log("Your Peer ID:", state.peerId);
+      });
 
-      try {
-        // Test API key with simple request
-        const response = await fetch('https://api.deepgram.com/v1/speak', {
-          method: 'GET',
-          headers: {
-            'Authorization': `Token ${key}`,
-          },
-        }).catch(() => null);
+      function generateNewPeerId() {
+        state.peerId = generatePeerId();
+        document.getElementById("peerId").value = state.peerId;
+        showInfo("Your new six-digit user ID is ready to share.");
+      }
 
-        if (response && response.status === 401) {
-          showError('Invalid Deepgram API key');
+      // Initialize Deepgram transcription
+      async function initializeTranscription() {
+        const key = document.getElementById("deepgramKey").value.trim();
+        const name = document.getElementById("userName").value.trim() || "You";
+
+        if (!key) {
+          showError("Please enter your Deepgram API key");
           return;
         }
 
-        updateTranscriptionStatus(true);
-        document.getElementById('micButton').disabled = false;
-        showInfo('✅ Deepgram connected! Now enable microphone and connect to peer.');
-      } catch (error) {
-        showError('Error connecting to Deepgram: ' + error.message);
+        state.deepgramKey = key;
+        state.userName = name;
+
+        try {
+          // Test API key with simple request
+          const response = await fetch("https://api.deepgram.com/v1/speak", {
+            method: "GET",
+            headers: {
+              Authorization: `Token ${key}`,
+            },
+          }).catch(() => null);
+
+          if (response && response.status === 401) {
+            showError("Invalid Deepgram API key");
+            return;
+          }
+
+          // Fetch usage statistics
+          fetchDeepgramUsage(key);
+
+          updateTranscriptionStatus(true);
+          document.getElementById("micButton").disabled = false;
+          showInfo(
+            "✅ Deepgram connected! Now enable microphone and connect to peer.",
+          );
+        } catch (error) {
+          showError("Error connecting to Deepgram: " + error.message);
+        }
       }
-    }
 
-    // Toggle microphone
-    async function toggleMicrophone() {
-      if (state.isMicEnabled) {
-        disableMicrophone();
-        return;
+      // Fetch Deepgram usage statistics
+      async function fetchDeepgramUsage(apiKey) {
+        try {
+          const response = await fetch("https://api.deepgram.com/v1/usage", {
+            method: "GET",
+            headers: {
+              Authorization: `Token ${apiKey}`,
+              "Content-Type": "application/json",
+            },
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            displayDeepgramUsage(data);
+          }
+        } catch (error) {
+          console.log("Could not fetch usage stats:", error.message);
+        }
       }
 
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-        state.localStream = stream;
-        state.isMicEnabled = true;
+      // Display usage in UI
+      function displayDeepgramUsage(data) {
+        const usageData = data.usage || [];
+        const currentMonth = new Date().toISOString().substring(0, 7); // YYYY-MM
 
-        // Setup audio analysis
-        state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        state.localAnalyser = state.audioContext.createAnalyser();
-        const source = state.audioContext.createMediaStreamSource(stream);
-        source.connect(state.localAnalyser);
+        // Find current month's usage
+        const thisMonth = usageData.find(
+          (u) => u.start.substring(0, 7) === currentMonth,
+        );
 
-        // Start monitoring volume
-        monitorVolume(state.localAnalyser, 'localVolume');
+        if (thisMonth) {
+          const totalMinutes = 600; // Monthly allowance used for the dashboard
+          const usedMinutes = Math.round(
+            ((thisMonth.requests || 0) / 1000) * 15,
+          ); // Rough estimate
+          const remainingMinutes = Math.max(0, totalMinutes - usedMinutes);
+          const percentUsed = Math.round((usedMinutes / totalMinutes) * 100);
 
-        // Update UI
-        document.getElementById('micButton').textContent = '🎙️ Microphone On';
-        document.getElementById('micButton').style.background = '#10b981';
-        document.getElementById('micStatus').textContent = '🟢 Microphone enabled';
+          document.getElementById("deepgramUsage").textContent =
+            `${remainingMinutes} min`;
+          document.getElementById("activeEngine").textContent =
+            remainingMinutes > 0 ? "Deepgram" : "Whisper";
+        }
+      }
 
-        // If already connected to peer, add stream
-        if (state.peer) {
-          state.peer.addStream(stream);
+      // Toggle microphone
+      async function toggleMicrophone() {
+        if (state.isMicEnabled) {
+          disableMicrophone();
+          return;
         }
 
-        // Start transcription stream to Deepgram
-        if (state.deepgramKey && state.deepgramSocket === null) {
-          connectToDeepgram();
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+            video: false,
+          });
+          state.localStream = stream;
+          state.isMicEnabled = true;
+
+          // Setup audio analysis
+          state.audioContext = new (
+            window.AudioContext || window.webkitAudioContext
+          )();
+          state.localAnalyser = state.audioContext.createAnalyser();
+          const source = state.audioContext.createMediaStreamSource(stream);
+          source.connect(state.localAnalyser);
+
+          // Start monitoring volume
+          monitorVolume(state.localAnalyser, "localVolume");
+
+          // Update UI
+          document.getElementById("micButton").textContent = "🎙️ Microphone On";
+          document.getElementById("micButton").style.background = "#10b981";
+          document.getElementById("micStatus").textContent =
+            "🟢 Microphone enabled";
+
+          // If already connected to peer, add stream
+          if (state.peer) {
+            state.peer.addStream(stream);
+          }
+
+          // Start transcription stream to Deepgram
+          if (state.deepgramKey && state.deepgramSocket === null) {
+            connectToDeepgram();
+          }
+        } catch (error) {
+          showError("Microphone access denied: " + error.message);
         }
-      } catch (error) {
-        showError('Microphone access denied: ' + error.message);
-      }
-    }
-
-    function disableMicrophone() {
-      if (state.localStream) {
-        state.localStream.getTracks().forEach(track => track.stop());
-        state.localStream = null;
       }
 
-      state.isMicEnabled = false;
-      document.getElementById('micButton').textContent = '🎙️ Allow Microphone';
-      document.getElementById('micButton').style.background = '#3b82f6';
-      document.getElementById('micStatus').textContent = '🔴 Microphone disabled';
-    }
+      function disableMicrophone() {
+        if (state.localStream) {
+          state.localStream.getTracks().forEach((track) => track.stop());
+          state.localStream = null;
+        }
 
-    // Connect to Deepgram WebSocket for real-time transcription
-    async function connectToDeepgram() {
-      if (!state.localStream || state.deepgramSocket) {
-        return;
+        state.isMicEnabled = false;
+        document.getElementById("micButton").textContent =
+          "🎙️ Allow Microphone";
+        document.getElementById("micButton").style.background = "#3b82f6";
+        document.getElementById("micStatus").textContent =
+          "🔴 Microphone disabled";
       }
 
-      try {
-        const wsUrl =
-          `wss://api.deepgram.com/v1/listen?model=nova-2&encoding=linear16&sample_rate=16000&interim_results=true`;
+      // Connect to Deepgram WebSocket for real-time transcription
+      async function connectToDeepgram() {
+        if (!state.localStream || state.deepgramSocket) {
+          return;
+        }
 
-        state.deepgramSocket = new WebSocket(wsUrl, ['token', state.deepgramKey]);
+        try {
+          const wsUrl = `wss://api.deepgram.com/v1/listen?model=nova-2&encoding=linear16&sample_rate=16000&interim_results=true`;
 
-        state.deepgramSocket.onopen = () => {
-          console.log('Connected to Deepgram');
-          // Setup audio streaming
-          startAudioStream();
-        };
+          state.deepgramSocket = new WebSocket(wsUrl, [
+            "token",
+            state.deepgramKey,
+          ]);
 
-        state.deepgramSocket.onmessage = (event) => {
-          const result = JSON.parse(event.data);
-          if (result.channel && result.channel.alternatives && result.channel.alternatives[0]) {
-            const transcript = result.channel.alternatives[0].transcript;
-            const isFinal = result.is_final;
+          state.deepgramSocket.onopen = () => {
+            console.log("Connected to Deepgram");
+            // Setup audio streaming
+            startAudioStream();
+          };
 
-            if (transcript) {
-              updateTranscript(state.userName, transcript, !isFinal);
+          state.deepgramSocket.onmessage = (event) => {
+            const result = JSON.parse(event.data);
+            if (
+              result.channel &&
+              result.channel.alternatives &&
+              result.channel.alternatives[0]
+            ) {
+              const transcript = result.channel.alternatives[0].transcript;
+              const isFinal = result.is_final;
+
+              if (transcript) {
+                updateTranscript(state.userName, transcript, !isFinal);
+              }
             }
+          };
+
+          state.deepgramSocket.onerror = (error) => {
+            console.error("Deepgram error:", error);
+            showError("Transcription error: " + error);
+          };
+
+          state.deepgramSocket.onclose = () => {
+            console.log("Disconnected from Deepgram");
+            state.deepgramSocket = null;
+          };
+        } catch (error) {
+          showError("Failed to connect to Deepgram: " + error.message);
+        }
+      }
+
+      // Stream audio to Deepgram
+      function startAudioStream() {
+        if (!state.localStream || !state.deepgramSocket) {
+          return;
+        }
+
+        const audioContext = new (
+          window.AudioContext || window.webkitAudioContext
+        )();
+        const source = audioContext.createMediaStreamSource(state.localStream);
+
+        // Resample to 16kHz (Deepgram requirement)
+        const processor = audioContext.createScriptProcessor(4096, 1, 1);
+        source.connect(processor);
+        processor.connect(audioContext.destination);
+
+        processor.onaudioprocess = (e) => {
+          const data = e.inputBuffer.getChannelData(0);
+          const pcm16 = new Int16Array(data.length);
+          for (let i = 0; i < data.length; i++) {
+            pcm16[i] =
+              Math.max(-1, Math.min(1, data[i])) < 0
+                ? data[i] * 0x8000
+                : data[i] * 0x7fff;
+          }
+
+          if (
+            state.deepgramSocket &&
+            state.deepgramSocket.readyState === WebSocket.OPEN
+          ) {
+            state.deepgramSocket.send(pcm16.buffer);
+          }
+        };
+      }
+
+      // Connect to peer
+      function connectToPeer() {
+        const remotePeerId = document
+          .getElementById("remotePeerId")
+          .value.trim();
+        if (!remotePeerId) {
+          showError("Please enter the six-digit connection ID");
+          return;
+        }
+
+        if (!/^\d{6}$/.test(remotePeerId)) {
+          showError("Connection ID must be six digits");
+          return;
+        }
+
+        if (!state.localStream) {
+          showError("Please enable microphone first");
+          return;
+        }
+
+        // In production, this would use a signaling server
+        // For now, use a simple alert to exchange offers/answers
+        simulatePeerConnection(remotePeerId);
+      }
+
+      // Simulate peer connection (In production, use a signaling server like Socket.io or PeerJS server)
+      function simulatePeerConnection(remotePeerId) {
+        showInfo(
+          `Ready to connect to ${remotePeerId}. In production, both peers would exchange SDP offers through a signaling server.`,
+        );
+
+        // For demo: Use RTCPeerConnection directly
+        const peerConnection = new RTCPeerConnection({
+          iceServers: [
+            { urls: "stun:stun.l.google.com:19302" },
+            { urls: "stun:stun1.l.google.com:19302" },
+          ],
+        });
+
+        // Add local stream
+        if (state.localStream) {
+          state.localStream.getTracks().forEach((track) => {
+            peerConnection.addTrack(track, state.localStream);
+          });
+        }
+
+        // Handle remote stream
+        peerConnection.ontrack = (event) => {
+          console.log("Remote stream received:", event.streams);
+          const remoteStream = event.streams[0];
+
+          // Setup remote audio analysis
+          if (state.audioContext) {
+            state.analyser = state.audioContext.createAnalyser();
+            const source =
+              state.audioContext.createMediaStreamSource(remoteStream);
+            source.connect(state.analyser);
+            monitorVolume(state.analyser, "remoteVolume");
           }
         };
 
-        state.deepgramSocket.onerror = (error) => {
-          console.error('Deepgram error:', error);
-          showError('Transcription error: ' + error);
+        // Setup ICE candidates
+        peerConnection.onicecandidate = (event) => {
+          if (event.candidate) {
+            console.log("ICE candidate:", event.candidate);
+            // Send to remote peer via signaling server
+          }
         };
 
-        state.deepgramSocket.onclose = () => {
-          console.log('Disconnected from Deepgram');
-          state.deepgramSocket = null;
+        peerConnection.onconnectionstatechange = () => {
+          console.log("Connection state:", peerConnection.connectionState);
+          if (peerConnection.connectionState === "connected") {
+            state.isConnected = true;
+            updateConnectionStatus(true);
+          } else if (
+            peerConnection.connectionState === "disconnected" ||
+            peerConnection.connectionState === "failed"
+          ) {
+            state.isConnected = false;
+            updateConnectionStatus(false);
+          }
         };
-      } catch (error) {
-        showError('Failed to connect to Deepgram: ' + error.message);
-      }
-    }
 
-    // Stream audio to Deepgram
-    function startAudioStream() {
-      if (!state.localStream || !state.deepgramSocket) {
-        return;
+        state.remotePeerConnection = peerConnection;
+
+        // In a real implementation, exchange SDP offers through a signaling server
+        alert(
+          `To complete connection, you need a signaling server.\n\nPeer ID: ${remotePeerId}\n\nFor production:\n1. Deploy a signaling server (Socket.io/WebSocket)\n2. Both peers exchange SDP offers\n3. Exchange ICE candidates`,
+        );
       }
 
-      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-      const source = audioContext.createMediaStreamSource(state.localStream);
-
-      // Resample to 16kHz (Deepgram requirement)
-      const processor = audioContext.createScriptProcessor(4096, 1, 1);
-      source.connect(processor);
-      processor.connect(audioContext.destination);
-
-      processor.onaudioprocess = (e) => {
-        const data = e.inputBuffer.getChannelData(0);
-        const pcm16 = new Int16Array(data.length);
-        for (let i = 0; i < data.length; i++) {
-          pcm16[i] = Math.max(-1, Math.min(1, data[i])) < 0 ? data[i] * 0x8000 : data[i] * 0x7fff;
+      // Update transcript display
+      function updateTranscript(speaker, text, isPartial = false) {
+        // Remove previous partial
+        const existing = state.transcripts.find(
+          (t) => t.speaker === speaker && t.isPartial,
+        );
+        if (existing) {
+          if (!isPartial) {
+            existing.isPartial = false;
+            existing.text = text;
+          }
+        } else if (text.trim()) {
+          state.transcripts.push({ speaker, text, isPartial });
         }
 
-        if (state.deepgramSocket && state.deepgramSocket.readyState === WebSocket.OPEN) {
-          state.deepgramSocket.send(pcm16.buffer);
-        }
-      };
-    }
-
-    // Connect to peer
-    function connectToPeer() {
-      const remotePeerId = document.getElementById('remotePeerId').value.trim();
-      if (!remotePeerId) {
-        showError('Please enter peer ID');
-        return;
+        renderTranscripts();
       }
 
-      if (!state.localStream) {
-        showError('Please enable microphone first');
-        return;
-      }
-
-      // In production, this would use a signaling server
-      // For now, use a simple alert to exchange offers/answers
-      simulatePeerConnection(remotePeerId);
-    }
-
-    // Simulate peer connection (In production, use a signaling server like Socket.io or PeerJS server)
-    function simulatePeerConnection(remotePeerId) {
-      showInfo(`Ready to connect to ${remotePeerId}. In production, both peers would exchange SDP offers through a signaling server.`);
-
-      // For demo: Use RTCPeerConnection directly
-      const peerConnection = new RTCPeerConnection({
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-        ],
-      });
-
-      // Add local stream
-      if (state.localStream) {
-        state.localStream.getTracks().forEach(track => {
-          peerConnection.addTrack(track, state.localStream);
-        });
-      }
-
-      // Handle remote stream
-      peerConnection.ontrack = (event) => {
-        console.log('Remote stream received:', event.streams);
-        const remoteStream = event.streams[0];
-
-        // Setup remote audio analysis
-        if (state.audioContext) {
-          state.analyser = state.audioContext.createAnalyser();
-          const source = state.audioContext.createMediaStreamSource(remoteStream);
-          source.connect(state.analyser);
-          monitorVolume(state.analyser, 'remoteVolume');
-        }
-      };
-
-      // Setup ICE candidates
-      peerConnection.onicecandidate = (event) => {
-        if (event.candidate) {
-          console.log('ICE candidate:', event.candidate);
-          // Send to remote peer via signaling server
-        }
-      };
-
-      peerConnection.onconnectionstatechange = () => {
-        console.log('Connection state:', peerConnection.connectionState);
-        if (peerConnection.connectionState === 'connected') {
-          state.isConnected = true;
-          updateConnectionStatus(true);
-        } else if (peerConnection.connectionState === 'disconnected' || peerConnection.connectionState === 'failed') {
-          state.isConnected = false;
-          updateConnectionStatus(false);
-        }
-      };
-
-      state.remotePeerConnection = peerConnection;
-
-      // In a real implementation, exchange SDP offers through a signaling server
-      alert(`To complete connection, you need a signaling server.\n\nPeer ID: ${remotePeerId}\n\nFor production:\n1. Deploy a signaling server (Socket.io/WebSocket)\n2. Both peers exchange SDP offers\n3. Exchange ICE candidates`);
-    }
-
-    // Update transcript display
-    function updateTranscript(speaker, text, isPartial = false) {
-      // Remove previous partial
-      const existing = state.transcripts.find(t => t.speaker === speaker && t.isPartial);
-      if (existing) {
-        if (!isPartial) {
-          existing.isPartial = false;
-          existing.text = text;
-        }
-      } else if (text.trim()) {
-        state.transcripts.push({ speaker, text, isPartial });
-      }
-
-      renderTranscripts();
-    }
-
-    function renderTranscripts() {
-      const display = document.getElementById('transcriptionDisplay');
-      display.innerHTML = state.transcripts
-        .map(
-          (entry) =>
-            `<div class="transcript-entry">
+      function renderTranscripts() {
+        const display = document.getElementById("transcriptionDisplay");
+        display.innerHTML = state.transcripts
+          .map(
+            (entry) =>
+              `<div class="transcript-entry">
             <div class="speaker-name">👤 ${entry.speaker}</div>
-            <div class="transcript-text ${entry.isPartial ? 'transcript-partial' : ''}">
+            <div class="transcript-text ${entry.isPartial ? "transcript-partial" : ""}">
               ${entry.text}
             </div>
-          </div>`
-        )
-        .join('');
-      display.scrollTop = display.scrollHeight;
-    }
-
-    // Monitor audio volume
-    function monitorVolume(analyser, elementId) {
-      const dataArray = new Uint8Array(analyser.frequencyBinCount);
-
-      function update() {
-        analyser.getByteFrequencyData(dataArray);
-        const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
-        const percentage = Math.min(100, (average / 255) * 150);
-        document.getElementById(elementId).style.width = percentage + '%';
-
-        requestAnimationFrame(update);
+          </div>`,
+          )
+          .join("");
+        display.scrollTop = display.scrollHeight;
       }
 
-      update();
-    }
+      // Monitor audio volume
+      function monitorVolume(analyser, elementId) {
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
 
-    // Update UI status
-    function updateTranscriptionStatus(connected) {
-      const badge = document.getElementById('transcriptionStatus');
-      if (connected) {
-        badge.innerHTML = '<span class="icon">●</span> Transcription Ready';
-        badge.className = 'status-badge listening';
-      } else {
-        badge.innerHTML = '<span class="icon">●</span> Not Connected';
-        badge.className = 'status-badge disconnected';
-      }
-    }
+        function update() {
+          analyser.getByteFrequencyData(dataArray);
+          const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+          const percentage = Math.min(100, (average / 255) * 150);
+          document.getElementById(elementId).style.width = percentage + "%";
 
-    function updateConnectionStatus(connected) {
-      const badge = document.getElementById('connectionStatus');
-      if (connected) {
-        badge.innerHTML = '<span class="icon">●</span> Connected to Peer';
-        badge.className = 'status-badge connected';
-      } else {
-        badge.innerHTML = '<span class="icon">●</span> Disconnected';
-        badge.className = 'status-badge disconnected';
-      }
-    }
+          requestAnimationFrame(update);
+        }
 
-    function showError(message) {
-      const errorDiv = document.getElementById('errorDisplay');
-      errorDiv.innerHTML = `<div class="error-box">⚠️ ${message}</div>`;
-      setTimeout(() => {
-        errorDiv.innerHTML = '';
-      }, 5000);
-    }
-
-    function showInfo(message) {
-      const errorDiv = document.getElementById('errorDisplay');
-      errorDiv.innerHTML = `<div class="info-box">ℹ️ ${message}</div>`;
-      setTimeout(() => {
-        errorDiv.innerHTML = '';
-      }, 6000);
-    }
-
-    // End call
-    function endCall() {
-      if (state.localStream) {
-        state.localStream.getTracks().forEach(track => track.stop());
+        update();
       }
 
-      if (state.remotePeerConnection) {
-        state.remotePeerConnection.close();
+      // Update UI status
+      function updateTranscriptionStatus(connected) {
+        const badge = document.getElementById("transcriptionStatus");
+        if (connected) {
+          badge.innerHTML = '<span class="icon">●</span> Transcription Ready';
+          badge.className = "status-badge listening";
+        } else {
+          badge.innerHTML = '<span class="icon">●</span> Not Connected';
+          badge.className = "status-badge disconnected";
+        }
       }
 
-      if (state.deepgramSocket) {
-        state.deepgramSocket.close();
-        state.deepgramSocket = null;
+      function updateConnectionStatus(connected) {
+        const badge = document.getElementById("connectionStatus");
+        if (connected) {
+          badge.innerHTML = '<span class="icon">●</span> Connected to Peer';
+          badge.className = "status-badge connected";
+        } else {
+          badge.innerHTML = '<span class="icon">●</span> Disconnected';
+          badge.className = "status-badge disconnected";
+        }
       }
 
-      disableMicrophone();
-      updateConnectionStatus(false);
-      state.transcripts = [];
-      document.getElementById('transcriptionDisplay').innerHTML =
-        '<div style="color: #64748b; text-align: center; padding-top: 120px;">Call ended. Transcriptions cleared.</div>';
-    }
-  </script>
-</body>
+      function showError(message) {
+        const errorDiv = document.getElementById("errorDisplay");
+        errorDiv.innerHTML = `<div class="error-box">⚠️ ${message}</div>`;
+        setTimeout(() => {
+          errorDiv.innerHTML = "";
+        }, 5000);
+      }
 
+      function showInfo(message) {
+        const errorDiv = document.getElementById("errorDisplay");
+        errorDiv.innerHTML = `<div class="info-box">ℹ️ ${message}</div>`;
+        setTimeout(() => {
+          errorDiv.innerHTML = "";
+        }, 6000);
+      }
+
+      // End call
+      function endCall() {
+        if (state.localStream) {
+          state.localStream.getTracks().forEach((track) => track.stop());
+        }
+
+        if (state.remotePeerConnection) {
+          state.remotePeerConnection.close();
+        }
+
+        if (state.deepgramSocket) {
+          state.deepgramSocket.close();
+          state.deepgramSocket = null;
+        }
+
+        disableMicrophone();
+        updateConnectionStatus(false);
+        state.transcripts = [];
+        document.getElementById("transcriptionDisplay").innerHTML =
+          '<div style="color: #64748b; text-align: center; padding-top: 120px;">Call ended. Transcriptions cleared.</div>';
+      }
+    </script>
+  </body>
 </html>

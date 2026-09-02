@@ -1,0 +1,727 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Multi-API Real-Time Transcription</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+        background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+        color: #e2e8f0;
+        margin: 0;
+        padding: 12px;
+        max-width: 1200px;
+        margin: 0 auto;
+      }
+
+      h1 {
+        color: #38bdf8;
+        margin: 0 0 8px 0;
+      }
+
+      .subtitle {
+        color: #94a3b8;
+        font-size: 0.9rem;
+        margin: 0 0 20px 0;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 16px;
+        margin-bottom: 16px;
+      }
+
+      .panel {
+        background: #1e293b;
+        border-radius: 12px;
+        padding: 16px;
+        border: 1px solid #334155;
+      }
+
+      h2 {
+        color: #38bdf8;
+        font-size: 0.95rem;
+        margin: 0 0 12px 0;
+      }
+
+      label {
+        display: block;
+        font-size: 0.85rem;
+        color: #94a3b8;
+        margin-bottom: 4px;
+        font-weight: 500;
+      }
+
+      input,
+      textarea {
+        width: 100%;
+        padding: 8px;
+        border-radius: 6px;
+        border: 1px solid #334155;
+        background: #0f172a;
+        color: #e2e8f0;
+        font-size: 0.85rem;
+        margin-bottom: 8px;
+      }
+
+      button {
+        background: #3b82f6;
+        color: white;
+        border: none;
+        padding: 10px 16px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 0.9rem;
+        font-weight: 500;
+        width: 100%;
+        transition: background 0.2s;
+      }
+
+      button:hover {
+        background: #2563eb;
+      }
+
+      button:disabled {
+        background: #475569;
+        cursor: not-allowed;
+      }
+
+      .api-card {
+        background: #0f172a;
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 12px;
+        border: 1px solid #334155;
+      }
+
+      .api-name {
+        font-weight: 600;
+        color: #38bdf8;
+        margin-bottom: 6px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .api-status {
+        font-size: 0.75rem;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-weight: 600;
+      }
+
+      .api-status.active {
+        background: #10b981;
+        color: white;
+      }
+
+      .api-status.exhausted {
+        background: #ef4444;
+        color: white;
+      }
+
+      .usage-bar {
+        width: 100%;
+        height: 6px;
+        background: #1e293b;
+        border-radius: 3px;
+        overflow: hidden;
+        margin-bottom: 6px;
+      }
+
+      .usage-fill {
+        height: 100%;
+        transition: width 0.3s;
+      }
+
+      .usage-fill.low {
+        background: #10b981;
+      }
+
+      .usage-fill.medium {
+        background: #f59e0b;
+      }
+
+      .usage-fill.high {
+        background: #ef4444;
+      }
+
+      .usage-stats {
+        font-size: 0.8rem;
+        color: #94a3b8;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 4px;
+      }
+
+      .stat {
+        display: flex;
+        justify-content: space-between;
+      }
+
+      .stat-value {
+        color: #38bdf8;
+        font-weight: 600;
+      }
+
+      .transcription-box {
+        background: #0f172a;
+        border-radius: 8px;
+        padding: 12px;
+        height: 400px;
+        overflow-y: auto;
+        border: 1px solid #334155;
+        margin-bottom: 12px;
+        font-size: 0.85rem;
+        line-height: 1.6;
+      }
+
+      .transcript-entry {
+        margin-bottom: 12px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid #334155;
+      }
+
+      .speaker-name {
+        color: #38bdf8;
+        font-weight: 500;
+        font-size: 0.8rem;
+        margin-bottom: 2px;
+      }
+
+      .transcript-text {
+        color: #e2e8f0;
+      }
+
+      .alert-box {
+        background: #7f1d1d;
+        border-left: 4px solid #ef4444;
+        padding: 12px;
+        border-radius: 4px;
+        font-size: 0.85rem;
+        color: #fecaca;
+        margin-bottom: 12px;
+      }
+
+      .info-box {
+        background: #1e293b;
+        border-left: 4px solid #38bdf8;
+        padding: 12px;
+        border-radius: 4px;
+        font-size: 0.85rem;
+        color: #cbd5e1;
+        margin-bottom: 12px;
+      }
+
+      .current-api {
+        background: #10b981;
+        color: white;
+        padding: 8px 12px;
+        border-radius: 4px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        margin-bottom: 12px;
+        text-align: center;
+      }
+
+      .button-group {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+
+      @media (max-width: 768px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .footer {
+        text-align: center;
+        color: #64748b;
+        font-size: 0.8rem;
+        margin-top: 20px;
+        padding-top: 16px;
+        border-top: 1px solid #334155;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div style="margin-bottom: 24px">
+      <h1>🎙️ Multi-API Transcription System</h1>
+      <p class="subtitle">
+        Automatic fallback: Deepgram (600 min) → Speechmatics (100 min) →
+        Whisper (Unlimited)
+      </p>
+    </div>
+
+    <div class="grid">
+      <!-- Setup Panel -->
+      <div class="panel">
+        <h2>🔧 Setup</h2>
+
+        <label>Your Name</label>
+        <input type="text" id="userName" placeholder="Your name" value="You" />
+
+        <label>Server URL</label>
+        <input
+          type="text"
+          id="serverUrl"
+          placeholder="http://localhost:3000"
+          value="http://localhost:3000" />
+
+        <button onclick="connectToServer()">✅ Connect to Server</button>
+
+        <div id="connectionStatus" class="info-box" style="margin-top: 12px">
+          ⚙️ Waiting to connect...
+        </div>
+
+        <h2 style="margin-top: 16px">🎤 Audio</h2>
+        <button id="micButton" onclick="toggleMicrophone()" disabled>
+          🎙️ Enable Microphone
+        </button>
+
+        <div
+          id="micStatus"
+          style="font-size: 0.8rem; color: #94a3b8; margin-top: 8px">
+          Waiting for server connection...
+        </div>
+      </div>
+
+      <!-- API Status Panel -->
+      <div class="panel">
+        <h2>📊 API Status & Usage</h2>
+
+        <div id="currentApiDisplay" class="current-api" style="display: none">
+          Current API: <span id="currentApiName">-</span>
+        </div>
+
+        <div id="apiStatusDisplay">
+          <div style="color: #64748b; text-align: center; padding: 20px">
+            Connect to server to see API status...
+          </div>
+        </div>
+
+        <h2 style="margin-top: 16px">⚙️ Settings</h2>
+        <label>
+          <input type="checkbox" id="autoSwitchToggle" checked />
+          Auto-switch when API exhausted
+        </label>
+
+        <label>
+          <input type="checkbox" id="alertToggle" checked />
+          Show low usage alerts
+        </label>
+      </div>
+
+      <!-- Transcription Panel (Full Width) -->
+      <div class="panel" style="grid-column: 1 / -1">
+        <h2>💬 Live Transcription</h2>
+
+        <div class="transcription-box" id="transcriptionDisplay">
+          <div style="color: #64748b; text-align: center; padding-top: 150px">
+            Enable microphone and start speaking...
+          </div>
+        </div>
+
+        <div id="alertsDisplay"></div>
+
+        <div class="button-group">
+          <button onclick="clearTranscripts()" style="background: #64748b">
+            🗑️ Clear
+          </button>
+          <button onclick="endSession()" style="background: #ef4444">
+            🛑 End
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <p>
+        📊 Free Tier Total: 700 min/month (Deepgram 600 + Speechmatics 100 +
+        Whisper ∞)
+        <br />
+        💰 After free tier: Auto-fallback to Whisper (unlimited, 2-5 sec delay)
+      </p>
+    </div>
+
+    <script>
+      // Global state
+      const state = {
+        userName: "You",
+        serverUrl: "http://localhost:3000",
+        socket: null,
+        localStream: null,
+        audioContext: null,
+        isMicEnabled: false,
+        transcripts: [],
+        currentAPI: null,
+        apiStatus: {},
+        statusCheckInterval: null,
+      };
+
+      // Connect to server
+      function connectToServer() {
+        const url = document.getElementById("serverUrl").value.trim();
+        const name = document.getElementById("userName").value.trim() || "You";
+
+        if (!url) {
+          showAlert("Enter server URL", "error");
+          return;
+        }
+
+        state.serverUrl = url;
+        state.userName = name;
+
+        try {
+          // Connect via Socket.io
+          state.socket = io(url, {
+            reconnection: true,
+            reconnectionDelay: 1000,
+            reconnectionDelayMax: 5000,
+            reconnectionAttempts: 5,
+          });
+
+          state.socket.on("connect", () => {
+            console.log("✅ Connected to server");
+            updateConnectionStatus(true);
+            document.getElementById("micButton").disabled = false;
+
+            // Start polling API status
+            pollAPIStatus();
+            state.statusCheckInterval = setInterval(pollAPIStatus, 10000); // Every 10 sec
+          });
+
+          state.socket.on("disconnect", () => {
+            console.log("❌ Disconnected from server");
+            updateConnectionStatus(false);
+            document.getElementById("micButton").disabled = true;
+            clearInterval(state.statusCheckInterval);
+          });
+
+          state.socket.on("transcript", (data) => {
+            updateTranscript(data.from, data.text, data.api);
+          });
+
+          state.socket.on("error", (error) => {
+            showAlert("Server error: " + error, "error");
+          });
+        } catch (error) {
+          showAlert("Connection failed: " + error.message, "error");
+        }
+      }
+
+      // Poll API status
+      function pollAPIStatus() {
+        if (!state.socket) return;
+
+        state.socket.emit("get-api-status", (status) => {
+          state.apiStatus = status;
+          displayAPIStatus(status);
+          checkAlerts(status);
+        });
+      }
+
+      // Display API status
+      function displayAPIStatus(status) {
+        const display = document.getElementById("apiStatusDisplay");
+
+        let html = "";
+
+        // Deepgram
+        html += createAPICard(
+          "Deepgram",
+          status.deepgram.used,
+          status.deepgram.limit,
+          status.deepgram.status,
+          "$0.0043/min",
+        );
+
+        // Speechmatics
+        html += createAPICard(
+          "Speechmatics",
+          status.speechmatics.used,
+          status.speechmatics.limit,
+          status.speechmatics.status,
+          "$0.05/min",
+        );
+
+        // Whisper
+        html += createAPICard(
+          "Whisper (Local)",
+          0,
+          -1,
+          status.whisper.status,
+          "Free",
+        );
+
+        display.innerHTML = html;
+
+        // Show current API
+        const currentAPI = getCurrentActiveAPI(status);
+        if (currentAPI) {
+          state.currentAPI = currentAPI;
+          document.getElementById("currentApiName").textContent = currentAPI;
+          document.getElementById("currentApiDisplay").style.display = "block";
+        }
+      }
+
+      // Create API card
+      function createAPICard(name, used, limit, status, cost) {
+        const remaining = limit === -1 ? -1 : Math.max(0, limit - used);
+        const percentUsed = limit === -1 ? 0 : Math.round((used / limit) * 100);
+
+        let fillClass = "low";
+        if (percentUsed > 80) fillClass = "high";
+        else if (percentUsed > 50) fillClass = "medium";
+
+        const statusBadge =
+          status === "active"
+            ? `<span class="api-status active">✅ Active</span>`
+            : `<span class="api-status exhausted">❌ Exhausted</span>`;
+
+        return `
+        <div class="api-card">
+          <div class="api-name">
+            <span>${name}</span>
+            ${statusBadge}
+          </div>
+          <div class="usage-bar">
+            <div class="usage-fill ${fillClass}" style="width: ${percentUsed}%;"></div>
+          </div>
+          <div class="usage-stats">
+            <div class="stat">
+              <span>Used:</span>
+              <span class="stat-value">${used}/${limit === -1 ? "∞" : limit} min</span>
+            </div>
+            <div class="stat">
+              <span>Remaining:</span>
+              <span class="stat-value">${remaining === -1 ? "∞" : remaining} min</span>
+            </div>
+            <div class="stat">
+              <span>Usage:</span>
+              <span class="stat-value">${percentUsed}%</span>
+            </div>
+            <div class="stat">
+              <span>Cost:</span>
+              <span class="stat-value">${cost}</span>
+            </div>
+          </div>
+        </div>
+      `;
+      }
+
+      // Get current active API
+      function getCurrentActiveAPI(status) {
+        if (status.deepgram.status === "active") return "Deepgram";
+        if (status.speechmatics.status === "active") return "Speechmatics";
+        return "Whisper (Local)";
+      }
+
+      // Check and show alerts
+      function checkAlerts(status) {
+        if (!document.getElementById("alertToggle").checked) return;
+
+        let alerts = "";
+
+        if (status.deepgram.status === "exhausted") {
+          alerts += `
+          <div class="alert-box">
+            ⚠️ Deepgram quota exhausted (600/600 min). Switched to Speechmatics.
+          </div>
+        `;
+        }
+
+        if (
+          status.deepgram.remaining < 50 &&
+          status.deepgram.status === "active"
+        ) {
+          alerts += `
+          <div class="alert-box">
+            ⚠️ Deepgram running low: ${status.deepgram.remaining} min remaining
+          </div>
+        `;
+        }
+
+        if (status.speechmatics.status === "exhausted") {
+          alerts += `
+          <div class="alert-box">
+            ⚠️ Speechmatics quota exhausted (100/100 min). Using Whisper (unlimited, slower).
+          </div>
+        `;
+        }
+
+        document.getElementById("alertsDisplay").innerHTML = alerts;
+      }
+
+      // Toggle microphone
+      async function toggleMicrophone() {
+        if (state.isMicEnabled) {
+          disableMicrophone();
+          return;
+        }
+
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+          });
+          state.localStream = stream;
+          state.isMicEnabled = true;
+
+          // Setup audio context
+          state.audioContext = new (
+            window.AudioContext || window.webkitAudioContext
+          )();
+
+          // Update UI
+          document.getElementById("micButton").textContent = "🎙️ Microphone On";
+          document.getElementById("micButton").style.background = "#10b981";
+          document.getElementById("micStatus").textContent = "🟢 Recording...";
+
+          // Start streaming audio
+          startAudioStreaming();
+        } catch (error) {
+          showAlert("Microphone access denied", "error");
+        }
+      }
+
+      // Start audio streaming to server
+      function startAudioStreaming() {
+        if (!state.localStream || !state.socket) return;
+
+        const audioContext = state.audioContext;
+        const processor = audioContext.createScriptProcessor(4096, 1, 1);
+        const source = audioContext.createMediaStreamSource(state.localStream);
+
+        source.connect(processor);
+        processor.connect(audioContext.destination);
+
+        processor.onaudioprocess = (e) => {
+          const data = e.inputBuffer.getChannelData(0);
+          const pcm16 = new Int16Array(data.length);
+
+          for (let i = 0; i < data.length; i++) {
+            const s = Math.max(-1, Math.min(1, data[i]));
+            pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+          }
+
+          if (state.socket) {
+            state.socket.emit(
+              "transcribe",
+              {
+                audio: Array.from(pcm16),
+                speaker: state.userName,
+              },
+              (result) => {
+                if (result.success) {
+                  updateTranscript(
+                    state.userName,
+                    result.transcript,
+                    result.api,
+                  );
+                }
+              },
+            );
+          }
+        };
+      }
+
+      function disableMicrophone() {
+        if (state.localStream) {
+          state.localStream.getTracks().forEach((track) => track.stop());
+          state.localStream = null;
+        }
+
+        state.isMicEnabled = false;
+        document.getElementById("micButton").textContent =
+          "🎙️ Enable Microphone";
+        document.getElementById("micButton").style.background = "#3b82f6";
+        document.getElementById("micStatus").textContent =
+          "🔴 Microphone disabled";
+      }
+
+      // Update transcript display
+      function updateTranscript(speaker, text, api = "") {
+        if (!text.trim()) return;
+
+        state.transcripts.push({
+          speaker,
+          text,
+          api,
+          timestamp: new Date(),
+        });
+
+        renderTranscripts();
+      }
+
+      function renderTranscripts() {
+        const display = document.getElementById("transcriptionDisplay");
+        display.innerHTML = state.transcripts
+          .map(
+            (entry) => `
+          <div class="transcript-entry">
+            <div class="speaker-name">👤 ${entry.speaker}</div>
+            <div class="transcript-text">${entry.text}</div>
+            ${entry.api ? `<div style="font-size: 0.75rem; color: #64748b; margin-top: 2px;">via ${entry.api}</div>` : ""}
+          </div>
+        `,
+          )
+          .join("");
+        display.scrollTop = display.scrollHeight;
+      }
+
+      // UI updates
+      function updateConnectionStatus(connected) {
+        const status = document.getElementById("connectionStatus");
+        if (connected) {
+          status.innerHTML = "✅ Connected to server";
+          status.style.background = "#1e293b";
+          status.style.borderLeftColor = "#10b981";
+        } else {
+          status.innerHTML = "❌ Not connected";
+          status.style.background = "#1e293b";
+          status.style.borderLeftColor = "#ef4444";
+        }
+      }
+
+      function clearTranscripts() {
+        state.transcripts = [];
+        document.getElementById("transcriptionDisplay").innerHTML =
+          '<div style="color: #64748b; text-align: center; padding-top: 150px;">Transcripts cleared</div>';
+      }
+
+      function endSession() {
+        disableMicrophone();
+        clearTranscripts();
+        if (state.socket) {
+          state.socket.disconnect();
+        }
+        clearInterval(state.statusCheckInterval);
+        updateConnectionStatus(false);
+      }
+
+      function showAlert(message, type = "info") {
+        const alertsDisplay = document.getElementById("alertsDisplay");
+        const boxClass = type === "error" ? "alert-box" : "info-box";
+        const icon = type === "error" ? "⚠️" : "ℹ️";
+
+        alertsDisplay.innerHTML = `<div class="${boxClass}">${icon} ${message}</div>`;
+        setTimeout(() => {
+          alertsDisplay.innerHTML = "";
+        }, 5000);
+      }
+    </script>
+  </body>
+</html>
