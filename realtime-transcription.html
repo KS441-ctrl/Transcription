@@ -7,7 +7,9 @@
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Real-Time Call Transcription</title>
     <script src="https://cdn.jsdelivr.net/npm/simple-peer@9.11.1/simplepeer.min.js"></script>
-    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script
+      src="https://cdn.socket.io/4.5.4/socket.io.min.js"
+      onerror="this.onerror=null;this.src='https://transcription-call-server.onrender.com/socket.io/socket.io.js'"></script>
     <style>
       * {
         box-sizing: border-box;
@@ -478,6 +480,11 @@
       function connectToSignalingServer() {
         if (state.socket) return state.socket;
 
+        if (typeof io !== "function") {
+          showError("Call connection library did not load. Reload this page or check browser extensions.");
+          return null;
+        }
+
         state.socket = io(signalingServer, { transports: ["websocket", "polling"] });
         state.socket.on("connect_error", () => {
           showError(
@@ -521,6 +528,7 @@
 
       function waitForSignalingConnection() {
         const socket = connectToSignalingServer();
+        if (!socket) return Promise.reject(new Error("Call connection library did not load."));
         if (socket.connected) return Promise.resolve(socket);
 
         return new Promise((resolve, reject) => {
