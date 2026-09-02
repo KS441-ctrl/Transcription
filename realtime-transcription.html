@@ -519,6 +519,23 @@
         return state.socket;
       }
 
+      function waitForSignalingConnection() {
+        const socket = connectToSignalingServer();
+        if (socket.connected) return Promise.resolve(socket);
+
+        return new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            socket.off("connect", onConnect);
+            reject(new Error("The call server did not respond in time."));
+          }, 15000);
+          const onConnect = () => {
+            clearTimeout(timeout);
+            resolve(socket);
+          };
+          socket.once("connect", onConnect);
+        });
+      }
+
       // Initialize on page load
       window.addEventListener("load", function () {
         state.peerId = "------";
@@ -528,20 +545,24 @@
 
       async function generateNewPeerId() {
         state.userName = document.getElementById("userName").value.trim() || "You";
-        const socket = connectToSignalingServer();
-        socket.emit("host-generate-code", {}, (result) => {
-          if (!result?.success) {
-            showError(result?.error || "Could not create a call ID");
-            return;
-          }
-          state.isHost = true;
-          state.sessionId = result.sessionId;
-          state.peerId = result.code;
-          document.getElementById("peerId").value = result.code;
-          startBrowserTranscription();
-          updateConnectionStatus(false);
-          showInfo("Call ID created. Share it with the other person.");
-        });
+        try {
+          const socket = await waitForSignalingConnection();
+          socket.emit("host-generate-code", {}, (result) => {
+            if (!result?.success) {
+              showError(result?.error || "Could not create a call ID");
+              return;
+            }
+            state.isHost = true;
+            state.sessionId = result.sessionId;
+            state.peerId = result.code;
+            document.getElementById("peerId").value = result.code;
+            startBrowserTranscription();
+            updateConnectionStatus(false);
+            showInfo("Call ID created. Share it with the other person.");
+          });
+        } catch (error) {
+          showError(error.message);
+        }
         if (!state.localStream) {
           await toggleMicrophone();
         }
@@ -788,7 +809,7 @@
           return;
         }
 
-        const socket = connectToSignalingServer();
+        const socket = await waitForSignalingConnection();
         socket.emit("guest-join-code", { code: remotePeerId }, async (result) => {
           if (!result?.success) {
             showError(result?.error || "Could not join this call ID");
