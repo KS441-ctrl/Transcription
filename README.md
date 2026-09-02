@@ -84,8 +84,6 @@ User A (Mobile)
     ↓                ↓
 [Deepgram]    [Deepgram]
     ↓                ↓
-[Transcription] [Transcription]
-    ↓                ↓
   Socket.io Signaling Server (manages connections)
 ```
 
@@ -103,7 +101,6 @@ User A (Mobile)
 
 1. Go to https://console.deepgram.com
 2. Click "Sign Up" (Free)
-3. Verify email
 4. Go to "API Keys" → "Create API Key"
 5. Copy the key (looks like: `sk-1234567890...`)
 6. Paste into the app's "Deepgram API Key" field
