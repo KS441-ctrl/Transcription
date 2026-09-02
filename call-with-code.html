@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Quick Call - 6 Digit Code</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      color: #e2e8f0;
+      margin: 0;
+      padding: 16px;
+      max-width: 480px;
+      margin: 0 auto;
+      min-height: 100vh;
+    }
+    .container { background: #1e293b; border-radius: 16px; padding: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+    h1 { color: #06b6d4; font-size: 1.4rem; margin: 0 0 6px 0; text-align: center; }
+    .tagline { text-align: center; color: #94a3b8; font-size: 0.9rem; margin-bottom: 24px; }
+    
+    /* CODE DISPLAY */
+    .code-section {
+      background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%);
+      padding: 24px;
+      border-radius: 12px;
+      text-align: center;
+      margin-bottom: 20px;
+      box-shadow: 0 8px 20px rgba(6, 182, 212, 0.3);
+    }
+    .code-label { color: #cffafe; font-size: 0.85rem; opacity: 0.9; margin-bottom: 8px; }
+    .code-display {
+      font-size: 3rem;
+      font-weight: 800;
+      letter-spacing: 8px;
+      color: white;
+      font-family: 'Courier New', monospace;
+      margin: 12px 0;
+      text-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+    .code-timer { font-size: 0.9rem; color: #cffafe; }
+    
+    /* INPUT SECTION */
+    .input-section {
+      margin-bottom: 24px;
+    }
+    .input-label { color: #94a3b8; font-size: 0.85rem; margin-bottom: 8px; display: block; }
+    .input-group {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .code-input {
+      flex: 1;
+      padding: 14px;
+      border: 2px solid #334155;
+      border-radius: 8px;
+      background: #0f172a;
+      color: #e2e8f0;
+      font-size: 1.2rem;
+      letter-spacing: 2px;
+      text-align: center;
+      font-weight: 600;
+      font-family: 'Courier New', monospace;
+      outline: none;
+      transition: all 0.2s;
+    }
+    .code-input:focus {
+      border-color: #06b6d4;
+      background: #0f172a;
+      box-shadow: 0 0 10px rgba(6, 182, 212, 0.2);
+    }
+    .code-input.error {
+      border-color: #ef4444;
+      animation: shake 0.3s;
+    }
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-5px); }
+      75% { transform: translateX(5px); }
+    }
+    
+    /* BUTTONS */
+    .btn {
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: 10px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      margin: 6px 0;
+    }
+    .btn:hover { transform: translateY(-2px); box-shadow: 0 8px 16px rgba(0,0,0,0.3); }
+    .btn:active { transform: translateY(0); }
+    .btn-primary { background: linear-gradient(135deg, #06b6d4, #0891b2); color: white; }
+    .btn-secondary { background: #334155; color: #e2e8f0; }
+    .btn-danger { background: #ef4444; color: white; }
+    .btn-success { background: #22c55e; color: white; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    
+    /* STATUS */
+    .status {
+      background: #0f172a;
+      border-left: 4px solid #06b6d4;
+      padding: 12px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      font-size: 0.9rem;
+      display: none;
+    }
+    .status.show { display: block; animation: slideDown 0.3s; }
+    .status.info { border-left-color: #06b6d4; }
+    .status.success { border-left-color: #22c55e; }
+    .status.error { border-left-color: #ef4444; }
+    @keyframes slideDown {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    /* CALL STATE */
+    .call-state {
+      background: #0f172a;
+      padding: 16px;
+      border-radius: 12px;
+      margin-bottom: 16px;
+      text-align: center;
+    }
+    .state-label { color: #94a3b8; font-size: 0.85rem; margin-bottom: 8px; }
+    .state-value {
+      font-size: 1.8rem;
+      font-weight: 700;
+      color: #06b6d4;
+      margin: 8px 0;
+    }
+    .state-subtitle { color: #64748b; font-size: 0.85rem; }
+    
+    /* AUDIO/TRANSCRIPTION */
+    .section-title { color: #94a3b8; font-size: 0.85rem; font-weight: 600; margin: 16px 0 10px 0; text-transform: uppercase; letter-spacing: 0.5px; }
+    
+    .controls {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .controls button { flex: 1; }
+    
+    .transcript-box {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      height: 240px;
+      overflow-y: auto;
+      padding: 12px;
+      font-size: 0.9rem;
+      line-height: 1.5;
+    }
+    .transcript-empty { color: #475569; text-align: center; padding: 40px 16px; }
+    .me { color: #06b6d4; margin: 8px 0; font-weight: 500; }
+    .other { color: #22c55e; margin: 8px 0; font-weight: 500; }
+    
+    /* LOADING */
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top: 2px solid white;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  
+  <h1>💬 Quick Call</h1>
+  <p class="tagline">Laptop ↔ Mobile ↔ Laptop with Live Transcription</p>
+
+  <!-- STATUS MESSAGE -->
+  <div class="status" id="status"></div>
+
+  <!-- STEP 1: CREATE OR JOIN -->
+  <div id="setupSection">
+    <div class="code-section">
+      <div class="code-label" id="codeLabel">Generate a 6-digit code to start</div>
+      <div class="code-display" id="codeDisplay">------</div>
+      <div class="code-timer" id="codeTimer"></div>
+    </div>
+
+    <div style="margin-bottom: 16px;">
+      <button class="btn btn-primary" onclick="generateCode()">
+        <span id="genBtn">📱 Generate Code (Host)</span>
+      </button>
+    </div>
+
+    <div style="text-align: center; margin: 16px 0; color: #64748b; font-size: 0.9rem;">
+      OR
+    </div>
+
+    <div class="input-section">
+      <label class="input-label">Enter 6-digit code to join:</label>
+      <div class="input-group">
+        <input type="text" id="codeInput" class="code-input" placeholder="000000" maxlength="6" 
+               oninput="this.value = this.value.replace(/[^0-9]/g, ''); updateJoinBtn();"
+               onkeypress="if(event.key === 'Enter') joinCall();">
+        <button class="btn btn-primary" style="flex: 0 0 50px; padding: 0;" onclick="joinCall()">Join</button>
+      </div>
+      <p style="font-size: 0.85rem; color: #64748b; margin: 8px 0 0 0;">
+        Friend will share their 6-digit code with you
+      </p>
+    </div>
+  </div>
+
+  <!-- STEP 2: ACTIVE CALL -->
+  <div id="callSection" style="display: none;">
+    
+    <div class="call-state">
+      <div class="state-label">Connection</div>
+      <div class="state-value" id="callStatus">Connecting...</div>
+      <div class="state-subtitle" id="callInfo"></div>
+    </div>
+
+    <!-- AUDIO CONTROLS -->
+    <div class="section-title">🎤 Audio</div>
+    <div class="controls">
+      <button class="btn btn-secondary" id="micBtn" onclick="toggleMicrophone()">🎤 Enable Mic</button>
+      <button class="btn btn-secondary" id="audioBtn" onclick="toggleAudio()">🔊 Enable Audio</button>
+      <button class="btn btn-danger" onclick="endCall()">End Call</button>
+    </div>
+
+    <!-- LIVE TRANSCRIPTION -->
+    <div class="section-title">✍️ Transcription (Live)</div>
+    <div class="transcript-box" id="transcript">
+      <div class="transcript-empty">Waiting for speech...</div>
+    </div>
+
+    <!-- API STATUS (Optional) -->
+    <div class="section-title">🤖 Transcription API</div>
+    <div style="background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 10px; font-size: 0.85rem;">
+      <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+        <span id="apiName">Deepgram</span>
+        <span id="apiStatus" style="color: #22c55e;">✓ Active</span>
+      </div>
+      <div style="background: #1e293b; height: 6px; border-radius: 3px; overflow: hidden;">
+        <div id="apiUsageBar" style="background: #22c55e; height: 100%; width: 30%; transition: width 0.3s;"></div>
+      </div>
+      <div style="color: #94a3b8; font-size: 0.8rem; margin-top: 4px;">
+        <span id="apiUsageText">450 / 600 min remaining</span>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+const USE_DEEPGRAM = true; // Set to false for Speechmatics or Whisper fallback
+
+// ============ CODE GENERATION ============
+let currentCode = null;
+let codeExpireTime = null;
+let isHost = false;
+
+function generateCode() {
+  currentCode = String(Math.floor(Math.random() * 1000000)).padStart(6, '0');
+  isHost = true;
+  
+  document.getElementById('codeDisplay').textContent = currentCode;
+  document.getElementById('codeLabel').textContent = 'Share this code with friend:';
+  document.getElementById('codeTimer').textContent = '⏱️ Code expires in 5 minutes';
+  document.getElementById('genBtn').textContent = '✓ Code Generated';
+  
+  codeExpireTime = Date.now() + 5 * 60 * 1000; // 5 min
+  startCodeTimer();
+  
+  showStatus('Code generated! Share with friend', 'success');
+  
+  // Simulate server storage (in real app, send to server)
+  window.localStorage.setItem('myCode_' + currentCode, JSON.stringify({
+    code: currentCode,
+    createdAt: Date.now(),
+    hostKey: 'host_' + Date.now()
+  }));
+}
+
+function startCodeTimer() {
+  setInterval(() => {
+    if (!codeExpireTime) return;
+    const remaining = codeExpireTime - Date.now();
+    if (remaining <= 0) {
+      document.getElementById('codeTimer').textContent = '❌ Code expired. Generate new one.';
+      currentCode = null;
+      return;
+    }
+    const mins = Math.floor(remaining / 60000);
+    const secs = Math.floor((remaining % 60000) / 1000);
+    document.getElementById('codeTimer').textContent = `⏱️ Expires in ${mins}:${String(secs).padStart(2, '0')}`;
+  }, 1000);
+}
+
+// ============ JOIN CALL ============
+function updateJoinBtn() {
+  const code = document.getElementById('codeInput').value;
+  const btn = event.target.nextElementSibling;
+  btn.disabled = code.length !== 6;
+}
+
+function joinCall() {
+  const code = document.getElementById('codeInput').value;
+  
+  if (code.length !== 6) {
+    showStatus('Enter 6-digit code', 'error');
+    document.getElementById('codeInput').classList.add('error');
+    setTimeout(() => document.getElementById('codeInput').classList.remove('error'), 500);
+    return;
+  }
+  
+  // Verify code exists (in real app, check with server)
+  const storedCode = window.localStorage.getItem('myCode_' + code);
+  if (!storedCode) {
+    showStatus('❌ Invalid code or expired', 'error');
+    return;
+  }
+  
+  showStatus('✓ Code verified! Connecting...', 'success');
+  currentCode = code;
+  isHost = false;
+  
+  setTimeout(() => {
+    startCall();
+  }, 800);
+}
+
+// ============ START CALL ============
+function startCall() {
+  document.getElementById('setupSection').style.display = 'none';
+  document.getElementById('callSection').style.display = 'block';
+  
+  document.getElementById('callStatus').textContent = '✓ Connected';
+  document.getElementById('callInfo').textContent = isHost ? '(Waiting for peer)' : '(Joined peer)';
+  document.getElementById('callStatus').style.color = '#22c55e';
+  
+  showStatus(`Call started! (${isHost ? 'Host' : 'Guest'})`, 'success');
+  
+  // Simulate WebRTC peer connection
+  simulateCall();
+  
+  // Start transcription
+  startTranscription();
+  
+  // Update API usage periodically
+  updateAPIUsage();
+  setInterval(updateAPIUsage, 10000);
+}
+
+// ============ END CALL ============
+function endCall() {
+  document.getElementById('setupSection').style.display = 'block';
+  document.getElementById('callSection').style.display = 'none';
+  
+  document.getElementById('codeDisplay').textContent = '------';
+  document.getElementById('codeLabel').textContent = 'Generate a 6-digit code to start';
+  document.getElementById('codeInput').value = '';
+  document.getElementById('transcript').innerHTML = '<div class="transcript-empty">Waiting for speech...</div>';
+  
+  currentCode = null;
+  isHost = false;
+  
+  showStatus('Call ended', 'info');
+}
+
+// ============ AUDIO CONTROLS ============
+let micEnabled = false;
+let audioEnabled = false;
+
+function toggleMicrophone() {
+  micEnabled = !micEnabled;
+  const btn = document.getElementById('micBtn');
+  
+  if (micEnabled) {
+    btn.textContent = '✓ Mic ON';
+    btn.style.background = '#22c55e';
+    showStatus('Microphone enabled - now speaking', 'info');
+  } else {
+    btn.textContent = '🎤 Mic OFF';
+    btn.style.background = '#334155';
+    showStatus('Microphone disabled', 'info');
+  }
+}
+
+function toggleAudio() {
+  audioEnabled = !audioEnabled;
+  const btn = document.getElementById('audioBtn');
+  
+  if (audioEnabled) {
+    btn.textContent = '✓ Audio ON';
+    btn.style.background = '#22c55e';
+    showStatus('Speaker enabled', 'info');
+  } else {
+    btn.textContent = '🔊 Audio OFF';
+    btn.style.background = '#334155';
+    showStatus('Speaker disabled', 'info');
+  }
+}
+
+// ============ TRANSCRIPTION ============
+let transcriptionIndex = 0;
+const samples = [
+  { speaker: 'me', text: 'Hey, can you hear me?' },
+  { speaker: 'other', text: 'Yeah, I can hear you perfectly!' },
+  { speaker: 'me', text: 'Great! The transcription is working live.' },
+  { speaker: 'other', text: 'This is so cool, I can see everything I say appear instantly.' },
+  { speaker: 'me', text: 'And it is using AI to transcribe our voice to text.' },
+];
+
+function startTranscription() {
+  const transcript = document.getElementById('transcript');
+  transcript.innerHTML = '';
+  
+  // Simulate real-time transcription
+  let delay = 2000;
+  samples.forEach((sample, idx) => {
+    setTimeout(() => {
+      const div = document.createElement('div');
+      div.className = sample.speaker === 'me' ? 'me' : 'other';
+      div.textContent = `${sample.speaker === 'me' ? 'You' : 'Friend'}: ${sample.text}`;
+      transcript.appendChild(div);
+      transcript.scrollTop = transcript.scrollHeight;
+      
+      // Show API being used
+      if (idx === 0 || idx % 2 === 0) {
+        updateAPIUsage();
+      }
+    }, delay);
+    delay += Math.random() * 3000 + 2000;
+  });
+}
+
+// ============ API USAGE ============
+async function updateAPIUsage() {
+  try {
+    // In real app, fetch from server
+    // const res = await fetch('http://localhost:3000/api/status');
+    // const data = await res.json();
+    
+    // Mock data
+    const remaining = Math.max(0, 600 - Math.floor(Math.random() * 50));
+    const used = 600 - remaining;
+    const percent = (used / 600) * 100;
+    
+    document.getElementById('apiUsageBar').style.width = percent + '%';
+    document.getElementById('apiUsageText').textContent = `${remaining} / 600 min remaining`;
+    
+    // Color coding
+    if (percent > 80) {
+      document.getElementById('apiUsageBar').style.background = '#ef4444';
+      document.getElementById('apiStatus').textContent = '⚠️ Low (20%)';
+      document.getElementById('apiStatus').style.color = '#ef4444';
+    } else if (percent > 50) {
+      document.getElementById('apiUsageBar').style.background = '#f59e0b';
+      document.getElementById('apiStatus').textContent = '⚠️ Medium';
+      document.getElementById('apiStatus').style.color = '#f59e0b';
+    } else {
+      document.getElementById('apiUsageBar').style.background = '#22c55e';
+      document.getElementById('apiStatus').textContent = '✓ Plenty';
+      document.getElementById('apiStatus').style.color = '#22c55e';
+    }
+  } catch (err) {
+    console.error('API status error:', err);
+  }
+}
+
+// ============ SIMULATE CALL (NO WEBRTC FOR NOW) ============
+function simulateCall() {
+  console.log('Call simulation started');
+  // In production: implement WebRTC peer connection here
+  // This is just a demo showing the UI/flow
+}
+
+// ============ UI HELPERS ============
+function showStatus(msg, type) {
+  const statusEl = document.getElementById('status');
+  statusEl.textContent = msg;
+  statusEl.className = `status show ${type}`;
+  
+  if (type !== 'error') {
+    setTimeout(() => {
+      statusEl.classList.remove('show');
+    }, 4000);
+  }
+}
+
+</script>
+
+</body>
+</html>
