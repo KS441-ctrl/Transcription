@@ -382,10 +382,8 @@
         </div>
 
         <div class="usage-strip" aria-label="Transcription usage">
-          <div class="usage-item">
-            <strong id="deepgramUsage">--</strong>Deepgram left
-          </div>
-          <div class="usage-item"><strong>Unlimited</strong>Whisper left</div>
+          <div class="usage-item"><strong>Live</strong>Browser STT</div>
+          <div class="usage-item"><strong>Unlimited</strong>Local Whisper</div>
           <div class="usage-item">
             <strong id="activeEngine">Ready</strong>Active engine
           </div>
@@ -451,9 +449,9 @@
         socket: null,
         sessionId: null,
         isHost: false,
-        deepgramSocket: null,
-        deepgramKey: null,
         recognition: null,
+        whisperRecorder: null,
+        whisperFallback: false,
         userName: "You",
         remoteUserName: "Remote",
         transcripts: [],
@@ -547,51 +545,6 @@
         });
       }
 
-      // Fetch Deepgram usage statistics
-      async function fetchDeepgramUsage(apiKey) {
-        try {
-          const response = await fetch("https://api.deepgram.com/v1/usage", {
-            method: "GET",
-            headers: {
-              Authorization: `Token ${apiKey}`,
-              "Content-Type": "application/json",
-            },
-          });
-
-          if (response.ok) {
-            const data = await response.json();
-            displayDeepgramUsage(data);
-          }
-        } catch (error) {
-          console.log("Could not fetch usage stats:", error.message);
-        }
-      }
-
-      // Display usage in UI
-      function displayDeepgramUsage(data) {
-        const usageData = data.usage || [];
-        const currentMonth = new Date().toISOString().substring(0, 7); // YYYY-MM
-
-        // Find current month's usage
-        const thisMonth = usageData.find(
-          (u) => u.start.substring(0, 7) === currentMonth,
-        );
-
-        if (thisMonth) {
-          const totalMinutes = 600; // Monthly allowance used for the dashboard
-          const usedMinutes = Math.round(
-            ((thisMonth.requests || 0) / 1000) * 15,
-          ); // Rough estimate
-          const remainingMinutes = Math.max(0, totalMinutes - usedMinutes);
-          const percentUsed = Math.round((usedMinutes / totalMinutes) * 100);
-
-          document.getElementById("deepgramUsage").textContent =
-            `${remainingMinutes} min`;
-          document.getElementById("activeEngine").textContent =
-            remainingMinutes > 0 ? "Deepgram" : "Whisper";
-        }
-      }
-
       // Toggle microphone
       async function toggleMicrophone() {
         if (state.isMicEnabled) {
@@ -626,10 +579,6 @@
             state.remotePeerConnection.addTrack(stream.getAudioTracks()[0], stream);
           }
 
-          // Start transcription stream to Deepgram
-          if (state.deepgramKey && state.deepgramSocket === null) {
-            connectToDeepgram();
-          }
           return true;
         } catch (error) {
           showError("Microphone access denied: " + error.message);
@@ -644,6 +593,10 @@
         }
 
         state.isMicEnabled = false;
+        if (state.whisperRecorder && state.whisperRecorder.state !== "inactive") {
+          state.whisperRecorder.stop();
+        }
+        state.whisperRecorder = null;
         document.getElementById("micStatus").textContent =
           "🔴 Microphone disabled";
       }
@@ -653,7 +606,7 @@
           window.SpeechRecognition || window.webkitSpeechRecognition;
 
         if (!SpeechRecognition) {
-          showError("Live transcription is not supported in this browser. Try Chrome or Edge.");
+          startWhisperFallback();
           return;
         }
 
@@ -692,7 +645,9 @@
         };
         state.recognition.onerror = (event) => {
           if (event.error !== "no-speech") {
-            showError("Transcription error: " + event.error);
+            state.recognition.onend = null;
+            state.recognition = null;
+            startWhisperFallback();
           }
         };
         state.recognition.start();
@@ -700,89 +655,44 @@
         updateTranscriptionStatus(true);
       }
 
-      // Connect to Deepgram WebSocket for real-time transcription
-      async function connectToDeepgram() {
-        if (!state.localStream || state.deepgramSocket) {
+      function startWhisperFallback() {
+        if (!state.localStream || state.whisperRecorder) return;
+        if (!window.MediaRecorder) {
+          showError("This browser cannot record audio for local Whisper fallback.");
           return;
         }
-
-        try {
-          const wsUrl = `wss://api.deepgram.com/v1/listen?model=nova-2&encoding=linear16&sample_rate=16000&interim_results=true`;
-
-          state.deepgramSocket = new WebSocket(wsUrl, [
-            "token",
-            state.deepgramKey,
-          ]);
-
-          state.deepgramSocket.onopen = () => {
-            console.log("Connected to Deepgram");
-            // Setup audio streaming
-            startAudioStream();
-          };
-
-          state.deepgramSocket.onmessage = (event) => {
-            const result = JSON.parse(event.data);
-            if (
-              result.channel &&
-              result.channel.alternatives &&
-              result.channel.alternatives[0]
-            ) {
-              const transcript = result.channel.alternatives[0].transcript;
-              const isFinal = result.is_final;
-
-              if (transcript) {
-                updateTranscript(state.userName, transcript, !isFinal);
-              }
+        state.whisperFallback = true;
+        document.getElementById("activeEngine").textContent = "Local Whisper";
+        const recorder = new MediaRecorder(state.localStream, {
+          mimeType: MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+            ? "audio/webm;codecs=opus"
+            : "audio/webm",
+        });
+        state.whisperRecorder = recorder;
+        recorder.ondataavailable = async (event) => {
+          if (!event.data.size || !state.sessionId) return;
+          try {
+            const response = await fetch(`${signalingServer}/api/whisper`, {
+              method: "POST",
+              headers: { "Content-Type": event.data.type || "audio/webm" },
+              body: event.data,
+            });
+            const result = await response.json();
+            if (result.text) {
+              updateTranscript(state.userName, result.text);
+              state.socket.emit("add-transcript", {
+                sessionId: state.sessionId,
+                speaker: state.userName,
+                text: result.text,
+              });
             }
-          };
-
-          state.deepgramSocket.onerror = (error) => {
-            console.error("Deepgram error:", error);
-            showError("Transcription error: " + error);
-          };
-
-          state.deepgramSocket.onclose = () => {
-            console.log("Disconnected from Deepgram");
-            state.deepgramSocket = null;
-          };
-        } catch (error) {
-          showError("Failed to connect to Deepgram: " + error.message);
-        }
-      }
-
-      // Stream audio to Deepgram
-      function startAudioStream() {
-        if (!state.localStream || !state.deepgramSocket) {
-          return;
-        }
-
-        const audioContext = new (
-          window.AudioContext || window.webkitAudioContext
-        )();
-        const source = audioContext.createMediaStreamSource(state.localStream);
-
-        // Resample to 16kHz (Deepgram requirement)
-        const processor = audioContext.createScriptProcessor(4096, 1, 1);
-        source.connect(processor);
-        processor.connect(audioContext.destination);
-
-        processor.onaudioprocess = (e) => {
-          const data = e.inputBuffer.getChannelData(0);
-          const pcm16 = new Int16Array(data.length);
-          for (let i = 0; i < data.length; i++) {
-            pcm16[i] =
-              Math.max(-1, Math.min(1, data[i])) < 0
-                ? data[i] * 0x8000
-                : data[i] * 0x7fff;
-          }
-
-          if (
-            state.deepgramSocket &&
-            state.deepgramSocket.readyState === WebSocket.OPEN
-          ) {
-            state.deepgramSocket.send(pcm16.buffer);
+          } catch (error) {
+            showError("Local Whisper is unavailable on the call server.");
           }
         };
+        recorder.start(5000);
+        document.getElementById("micStatus").textContent =
+          "🟢 Local Whisper fallback active";
       }
 
       function createPeerConnection() {
@@ -993,11 +903,6 @@
 
         if (state.remotePeerConnection) {
           state.remotePeerConnection.close();
-        }
-
-        if (state.deepgramSocket) {
-          state.deepgramSocket.close();
-          state.deepgramSocket = null;
         }
 
         if (state.socket && state.sessionId) {

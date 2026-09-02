@@ -2,7 +2,15 @@ const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
 const cors = require('cors');
+const fs = require('fs/promises');
+const os = require('os');
+const path = require('path');
+const crypto = require('crypto');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
 require('dotenv').config();
+
+const execFileAsync = promisify(execFile);
 
 const app = express();
 const server = http.createServer(app);
@@ -282,42 +290,30 @@ app.post('/api/validate-code', (req, res) => {
   }
 });
 
-// ============ DEEPGRAM TRANSCRIPTION PROXY ============
-const axios = require('axios');
-
-async function transcribeWithDeepgram(audioBuffer) {
+// ============ LOCAL WHISPER FALLBACK ============
+app.post('/api/whisper', express.raw({ type: 'audio/*', limit: '25mb' }), async (req, res) => {
+  const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'transcription-'));
+  const audioPath = path.join(tempDirectory, `${crypto.randomUUID()}.webm`);
   try {
-    const response = await axios.post(
-      'https://api.deepgram.com/v1/listen?model=nova&punctuate=true',
-      audioBuffer,
-      {
-        headers: {
-          'Authorization': `Token ${process.env.DEEPGRAM_API_KEY}`,
-          'Content-Type': 'application/octet-stream'
-        }
-      }
-    );
-    
-    return response.data.results?.channels[0]?.alternatives[0]?.transcript || '';
+    await fs.writeFile(audioPath, req.body);
+    const outputDirectory = path.join(tempDirectory, 'output');
+    await fs.mkdir(outputDirectory);
+    await execFileAsync(process.env.PYTHON_COMMAND || 'python', [
+      '-m', 'whisper', audioPath,
+      '--model', process.env.WHISPER_MODEL || 'base',
+      '--language', process.env.WHISPER_LANGUAGE || 'en',
+      '--output_format', 'txt',
+      '--output_dir', outputDirectory,
+      '--fp16', 'False'
+    ], { maxBuffer: 1024 * 1024 });
+    const textPath = path.join(outputDirectory, `${path.basename(audioPath, '.webm')}.txt`);
+    const text = (await fs.readFile(textPath, 'utf8')).trim();
+    res.json({ success: true, text, engine: 'Local Whisper' });
   } catch (error) {
-    console.error('Deepgram error:', error.message);
-    return null;
-  }
-}
-
-// Transcription endpoint
-app.post('/api/transcribe', async (req, res) => {
-  try {
-    const audioBuffer = req.body;
-    const text = await transcribeWithDeepgram(audioBuffer);
-    
-    if (text) {
-      res.json({ success: true, text });
-    } else {
-      res.json({ success: false, error: 'Transcription failed' });
-    }
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    console.error('Whisper error:', error.message);
+    res.status(503).json({ success: false, error: 'Local Whisper is unavailable' });
+  } finally {
+    await fs.rm(tempDirectory, { recursive: true, force: true });
   }
 });
 
