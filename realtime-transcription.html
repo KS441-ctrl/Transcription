@@ -472,6 +472,7 @@
 
       const signalingServer =
         new URLSearchParams(window.location.search).get("server") ||
+        window.TRANSCRIPTION_SIGNALING_SERVER ||
         (window.location.hostname === "localhost"
           ? "http://localhost:3000"
           : window.location.origin);
@@ -481,7 +482,9 @@
 
         state.socket = io(signalingServer, { transports: ["websocket", "polling"] });
         state.socket.on("connect_error", () => {
-          showError("Call server unavailable. Start code-call-server.js or check the server URL.");
+          showError(
+            "Call server unavailable. Deploy code-call-server.js and open this page with ?server=https://your-server-url.",
+          );
         });
         state.socket.on("guest-joined", async ({ sessionId }) => {
           if (state.isHost && sessionId === state.sessionId) {

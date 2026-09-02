@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: transcription-call-server
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DEEPGRAM_API_KEY
+        sync: false
+      - key: SPEECHMATICS_API_KEY
+        sync: false
