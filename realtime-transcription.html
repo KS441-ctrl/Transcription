@@ -473,7 +473,7 @@
         window.TRANSCRIPTION_SIGNALING_SERVER ||
         (window.location.hostname === "localhost"
           ? "http://localhost:3000"
-          : window.location.origin);
+          : "https://transcription-call-server.onrender.com");
 
       function connectToSignalingServer() {
         if (state.socket) return state.socket;
@@ -528,7 +528,6 @@
 
       async function generateNewPeerId() {
         state.userName = document.getElementById("userName").value.trim() || "You";
-        if (!state.localStream && !(await toggleMicrophone())) return;
         const socket = connectToSignalingServer();
         socket.emit("host-generate-code", {}, (result) => {
           if (!result?.success) {
@@ -543,6 +542,9 @@
           updateConnectionStatus(false);
           showInfo("Call ID created. Share it with the other person.");
         });
+        if (!state.localStream) {
+          await toggleMicrophone();
+        }
       }
 
       // Toggle microphone
