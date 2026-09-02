@@ -4,7 +4,8 @@
   "description": "WebRTC signaling server for real-time group call transcription",
   "main": "signaling-server.js",
   "scripts": {
-    "start": "node signaling-server.js",
+    "start": "node code-call-server.js",
+    "start:group": "node signaling-server.js",
     "dev": "nodemon signaling-server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

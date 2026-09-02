@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/",
+      "destination": "/realtime-transcription.html"
+    }
+  ]
+}

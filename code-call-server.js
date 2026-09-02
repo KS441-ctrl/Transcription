@@ -45,6 +45,14 @@ function createSession(code, hostId) {
   return { code, sessionId, expiresAt };
 }
 
+function createUniqueCode() {
+  let code = generateCode();
+  while (activeCodes.has(code)) {
+    code = generateCode();
+  }
+  return code;
+}
+
 function validateCode(code) {
   const session = activeCodes.get(code);
   if (!session) return null;
@@ -72,7 +80,7 @@ io.on('connection', (socket) => {
   
   // ---- HOST: Generate code ----
   socket.on('host-generate-code', (data, callback) => {
-    const { code, sessionId, expiresAt } = createSession(data.code, socket.id);
+    const { code, sessionId, expiresAt } = createSession(createUniqueCode(), socket.id);
     
     socket.join(sessionId);
     
@@ -142,9 +150,10 @@ io.on('connection', (socket) => {
     
     if (!session) return;
     
-    // Send offer to other peer
+    // Send offer only to the other peer
     const targetId = socket.id === session.host.id ? session.guest.id : session.host.id;
-    io.to(sessionId).emit('webrtc-offer-received', {
+    if (!targetId) return;
+    io.to(targetId).emit('webrtc-offer-received', {
       fromId: socket.id,
       offer
     });
@@ -154,7 +163,11 @@ io.on('connection', (socket) => {
   
   socket.on('webrtc-answer', (data) => {
     const { sessionId, answer } = data;
-    io.to(sessionId).emit('webrtc-answer-received', {
+    const session = peerSessions.get(sessionId);
+    if (!session) return;
+    const targetId = socket.id === session.host.id ? session.guest.id : session.host.id;
+    if (!targetId) return;
+    io.to(targetId).emit('webrtc-answer-received', {
       fromId: socket.id,
       answer
     });
@@ -163,7 +176,11 @@ io.on('connection', (socket) => {
   
   socket.on('webrtc-ice-candidate', (data) => {
     const { sessionId, candidate } = data;
-    io.to(sessionId).emit('webrtc-ice-candidate', {
+    const session = peerSessions.get(sessionId);
+    if (!session) return;
+    const targetId = socket.id === session.host.id ? session.guest.id : session.host.id;
+    if (!targetId) return;
+    io.to(targetId).emit('webrtc-ice-candidate', {
       fromId: socket.id,
       candidate
     });
@@ -184,6 +201,7 @@ io.on('connection', (socket) => {
     
     // Broadcast to both peers
     io.to(sessionId).emit('transcript-updated', {
+      senderId: socket.id,
       speaker: socket.id === session.host.id ? 'You' : 'Friend',
       text
     });

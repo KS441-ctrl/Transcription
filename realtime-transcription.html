@@ -7,6 +7,7 @@
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Real-Time Call Transcription</title>
     <script src="https://cdn.jsdelivr.net/npm/simple-peer@9.11.1/simplepeer.min.js"></script>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <style>
       * {
         box-sizing: border-box;
@@ -352,7 +353,7 @@
         <input type="text" id="userName" placeholder="Your name" value="You" />
 
         <div class="code-label">
-          <label>Your user ID</label>
+          <label>Generated call ID</label>
           <span style="font-size: 0.7rem; color: #64748b">Share this</span>
         </div>
         <input
@@ -362,7 +363,7 @@
           readonly
           placeholder="------" />
 
-        <label>Connection ID</label>
+          <label>Connection ID to join</label>
         <input
           class="code-input"
           type="text"
@@ -390,26 +391,14 @@
           </div>
         </div>
 
-        <input
-          type="password"
-          id="deepgramKey"
-          placeholder="Transcription API key"
-          aria-label="Transcription API key" />
-        <button onclick="initializeTranscription()">Start transcription</button>
-
         <div style="margin-top: 8px">
-          <button id="micButton" onclick="toggleMicrophone()" disabled>
-            🎙️ Microphone
-          </button>
-          <div style="margin-top: 6px">
-            <div class="volume-indicator">
-              <div id="localVolume" class="volume-bar"></div>
-            </div>
+          <div class="volume-indicator">
+            <div id="localVolume" class="volume-bar"></div>
           </div>
           <div
             id="micStatus"
             style="font-size: 0.75rem; color: #94a3b8; margin-top: 4px">
-            Enable microphone to begin
+            Connect to allow microphone
           </div>
         </div>
 
@@ -459,8 +448,12 @@
         localStream: null,
         peer: null,
         remotePeerConnection: null,
+        socket: null,
+        sessionId: null,
+        isHost: false,
         deepgramSocket: null,
         deepgramKey: null,
+        recognition: null,
         userName: "You",
         remoteUserName: "Remote",
         transcripts: [],
@@ -477,57 +470,78 @@
         return String(Math.floor(100000 + Math.random() * 900000));
       }
 
-      // Initialize on page load
-      window.addEventListener("load", function () {
-        state.peerId = generatePeerId();
-        document.getElementById("peerId").value = state.peerId;
-        console.log("Your Peer ID:", state.peerId);
-      });
+      const signalingServer =
+        new URLSearchParams(window.location.search).get("server") ||
+        (window.location.hostname === "localhost"
+          ? "http://localhost:3000"
+          : window.location.origin);
 
-      function generateNewPeerId() {
-        state.peerId = generatePeerId();
-        document.getElementById("peerId").value = state.peerId;
-        showInfo("Your new six-digit user ID is ready to share.");
+      function connectToSignalingServer() {
+        if (state.socket) return state.socket;
+
+        state.socket = io(signalingServer, { transports: ["websocket", "polling"] });
+        state.socket.on("connect_error", () => {
+          showError("Call server unavailable. Start code-call-server.js or check the server URL.");
+        });
+        state.socket.on("guest-joined", async ({ sessionId }) => {
+          if (state.isHost && sessionId === state.sessionId) {
+            await createOffer();
+          }
+        });
+        state.socket.on("webrtc-offer-received", async ({ fromId, offer }) => {
+          if (fromId === state.socket.id) return;
+          await handleOffer(offer);
+        });
+        state.socket.on("webrtc-answer-received", async ({ fromId, answer }) => {
+          if (fromId === state.socket.id || !state.remotePeerConnection) return;
+          await state.remotePeerConnection.setRemoteDescription(answer);
+          updateConnectionStatus(true);
+        });
+        state.socket.on("webrtc-ice-candidate", async ({ fromId, candidate }) => {
+          if (fromId === state.socket.id || !state.remotePeerConnection || !candidate) return;
+          try {
+            await state.remotePeerConnection.addIceCandidate(candidate);
+          } catch (error) {
+            console.debug("ICE candidate was not accepted:", error.message);
+          }
+        });
+        state.socket.on("transcript-updated", ({ senderId, speaker, text }) => {
+          if (senderId !== state.socket.id) {
+            updateTranscript(speaker, text);
+          }
+        });
+        state.socket.on("peer-disconnected", () => {
+          state.isConnected = false;
+          updateConnectionStatus(false);
+          showInfo("The other person left the call.");
+        });
+        return state.socket;
       }
 
-      // Initialize Deepgram transcription
-      async function initializeTranscription() {
-        const key = document.getElementById("deepgramKey").value.trim();
-        const name = document.getElementById("userName").value.trim() || "You";
+      // Initialize on page load
+      window.addEventListener("load", function () {
+        state.peerId = "------";
+        document.getElementById("peerId").value = state.peerId;
+        connectToSignalingServer();
+      });
 
-        if (!key) {
-          showError("Please enter your Deepgram API key");
-          return;
-        }
-
-        state.deepgramKey = key;
-        state.userName = name;
-
-        try {
-          // Test API key with simple request
-          const response = await fetch("https://api.deepgram.com/v1/speak", {
-            method: "GET",
-            headers: {
-              Authorization: `Token ${key}`,
-            },
-          }).catch(() => null);
-
-          if (response && response.status === 401) {
-            showError("Invalid Deepgram API key");
+      async function generateNewPeerId() {
+        state.userName = document.getElementById("userName").value.trim() || "You";
+        if (!state.localStream && !(await toggleMicrophone())) return;
+        const socket = connectToSignalingServer();
+        socket.emit("host-generate-code", {}, (result) => {
+          if (!result?.success) {
+            showError(result?.error || "Could not create a call ID");
             return;
           }
-
-          // Fetch usage statistics
-          fetchDeepgramUsage(key);
-
-          updateTranscriptionStatus(true);
-          document.getElementById("micButton").disabled = false;
-          showInfo(
-            "✅ Deepgram connected! Now enable microphone and connect to peer.",
-          );
-        } catch (error) {
-          showError("Error connecting to Deepgram: " + error.message);
-        }
+          state.isHost = true;
+          state.sessionId = result.sessionId;
+          state.peerId = result.code;
+          document.getElementById("peerId").value = result.code;
+          startBrowserTranscription();
+          updateConnectionStatus(false);
+          showInfo("Call ID created. Share it with the other person.");
+        });
       }
 
       // Fetch Deepgram usage statistics
@@ -579,7 +593,7 @@
       async function toggleMicrophone() {
         if (state.isMicEnabled) {
           disableMicrophone();
-          return;
+          return true;
         }
 
         try {
@@ -601,23 +615,22 @@
           // Start monitoring volume
           monitorVolume(state.localAnalyser, "localVolume");
 
-          // Update UI
-          document.getElementById("micButton").textContent = "🎙️ Microphone On";
-          document.getElementById("micButton").style.background = "#10b981";
           document.getElementById("micStatus").textContent =
             "🟢 Microphone enabled";
 
-          // If already connected to peer, add stream
-          if (state.peer) {
-            state.peer.addStream(stream);
+          // Add the microphone if the connection was created first.
+          if (state.remotePeerConnection) {
+            state.remotePeerConnection.addTrack(stream.getAudioTracks()[0], stream);
           }
 
           // Start transcription stream to Deepgram
           if (state.deepgramKey && state.deepgramSocket === null) {
             connectToDeepgram();
           }
+          return true;
         } catch (error) {
           showError("Microphone access denied: " + error.message);
+          return false;
         }
       }
 
@@ -628,11 +641,60 @@
         }
 
         state.isMicEnabled = false;
-        document.getElementById("micButton").textContent =
-          "🎙️ Allow Microphone";
-        document.getElementById("micButton").style.background = "#3b82f6";
         document.getElementById("micStatus").textContent =
           "🔴 Microphone disabled";
+      }
+
+      function startBrowserTranscription() {
+        const SpeechRecognition =
+          window.SpeechRecognition || window.webkitSpeechRecognition;
+
+        if (!SpeechRecognition) {
+          showError("Live transcription is not supported in this browser. Try Chrome or Edge.");
+          return;
+        }
+
+        if (state.recognition) {
+          return;
+        }
+
+        state.recognition = new SpeechRecognition();
+        state.recognition.continuous = true;
+        state.recognition.interimResults = true;
+        state.recognition.lang = "en-IN";
+        state.recognition.onresult = (event) => {
+          for (let index = event.resultIndex; index < event.results.length; index++) {
+            const text = event.results[index][0].transcript.trim();
+            if (text) {
+              const isPartial = !event.results[index].isFinal;
+              updateTranscript(state.userName, text, isPartial);
+              if (!isPartial && state.socket && state.sessionId) {
+                state.socket.emit("add-transcript", {
+                  sessionId: state.sessionId,
+                  speaker: state.userName,
+                  text,
+                });
+              }
+            }
+          }
+        };
+        state.recognition.onend = () => {
+          if (state.isMicEnabled && state.recognition) {
+            try {
+              state.recognition.start();
+            } catch (error) {
+              console.debug("Speech recognition restart:", error.message);
+            }
+          }
+        };
+        state.recognition.onerror = (event) => {
+          if (event.error !== "no-speech") {
+            showError("Transcription error: " + event.error);
+          }
+        };
+        state.recognition.start();
+        document.getElementById("activeEngine").textContent = "Browser STT";
+        updateTranscriptionStatus(true);
       }
 
       // Connect to Deepgram WebSocket for real-time transcription
@@ -720,8 +782,77 @@
         };
       }
 
-      // Connect to peer
-      function connectToPeer() {
+      function createPeerConnection() {
+        if (state.remotePeerConnection) return state.remotePeerConnection;
+
+        const peerConnection = new RTCPeerConnection({
+          iceServers: [
+            { urls: "stun:stun.l.google.com:19302" },
+            { urls: "stun:stun1.l.google.com:19302" },
+          ],
+        });
+
+        state.localStream.getTracks().forEach((track) => {
+          peerConnection.addTrack(track, state.localStream);
+        });
+        peerConnection.ontrack = (event) => {
+          const remoteStream = event.streams[0];
+          const audio = document.createElement("audio");
+          audio.autoplay = true;
+          audio.playsInline = true;
+          audio.srcObject = remoteStream;
+          document.body.appendChild(audio);
+          if (state.audioContext) {
+            state.analyser = state.audioContext.createAnalyser();
+            state.audioContext.createMediaStreamSource(remoteStream).connect(state.analyser);
+            monitorVolume(state.analyser, "remoteVolume");
+          }
+        };
+        peerConnection.onicecandidate = (event) => {
+          if (event.candidate && state.socket && state.sessionId) {
+            state.socket.emit("webrtc-ice-candidate", {
+              sessionId: state.sessionId,
+              candidate: event.candidate,
+            });
+          }
+        };
+        peerConnection.onconnectionstatechange = () => {
+          const connected = peerConnection.connectionState === "connected";
+          state.isConnected = connected;
+          updateConnectionStatus(connected);
+          if (peerConnection.connectionState === "failed") {
+            showError("Connection failed. Both devices must stay online during setup.");
+          }
+        };
+        state.remotePeerConnection = peerConnection;
+        return peerConnection;
+      }
+
+      async function createOffer() {
+        const peerConnection = createPeerConnection();
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+        state.socket.emit("webrtc-offer", {
+          sessionId: state.sessionId,
+          offer: peerConnection.localDescription,
+        });
+        showInfo("Connecting to the other person...");
+      }
+
+      async function handleOffer(offer) {
+        const peerConnection = createPeerConnection();
+        await peerConnection.setRemoteDescription(offer);
+        const answer = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answer);
+        state.socket.emit("webrtc-answer", {
+          sessionId: state.sessionId,
+          answer: peerConnection.localDescription,
+        });
+        showInfo("Answer sent. Connecting...");
+      }
+
+      // Connect to a six-digit call
+      async function connectToPeer() {
         const remotePeerId = document
           .getElementById("remotePeerId")
           .value.trim();
@@ -735,80 +866,26 @@
           return;
         }
 
-        if (!state.localStream) {
-          showError("Please enable microphone first");
+        state.userName =
+          document.getElementById("userName").value.trim() || "You";
+
+        if (!state.localStream && !(await toggleMicrophone())) {
           return;
         }
 
-        // In production, this would use a signaling server
-        // For now, use a simple alert to exchange offers/answers
-        simulatePeerConnection(remotePeerId);
-      }
-
-      // Simulate peer connection (In production, use a signaling server like Socket.io or PeerJS server)
-      function simulatePeerConnection(remotePeerId) {
-        showInfo(
-          `Ready to connect to ${remotePeerId}. In production, both peers would exchange SDP offers through a signaling server.`,
-        );
-
-        // For demo: Use RTCPeerConnection directly
-        const peerConnection = new RTCPeerConnection({
-          iceServers: [
-            { urls: "stun:stun.l.google.com:19302" },
-            { urls: "stun:stun1.l.google.com:19302" },
-          ],
+        const socket = connectToSignalingServer();
+        socket.emit("guest-join-code", { code: remotePeerId }, async (result) => {
+          if (!result?.success) {
+            showError(result?.error || "Could not join this call ID");
+            return;
+          }
+          state.isHost = false;
+          state.sessionId = result.sessionId;
+          startBrowserTranscription();
+          createPeerConnection();
+          updateConnectionStatus(false);
+          showInfo("Joined call. Waiting for the host to connect...");
         });
-
-        // Add local stream
-        if (state.localStream) {
-          state.localStream.getTracks().forEach((track) => {
-            peerConnection.addTrack(track, state.localStream);
-          });
-        }
-
-        // Handle remote stream
-        peerConnection.ontrack = (event) => {
-          console.log("Remote stream received:", event.streams);
-          const remoteStream = event.streams[0];
-
-          // Setup remote audio analysis
-          if (state.audioContext) {
-            state.analyser = state.audioContext.createAnalyser();
-            const source =
-              state.audioContext.createMediaStreamSource(remoteStream);
-            source.connect(state.analyser);
-            monitorVolume(state.analyser, "remoteVolume");
-          }
-        };
-
-        // Setup ICE candidates
-        peerConnection.onicecandidate = (event) => {
-          if (event.candidate) {
-            console.log("ICE candidate:", event.candidate);
-            // Send to remote peer via signaling server
-          }
-        };
-
-        peerConnection.onconnectionstatechange = () => {
-          console.log("Connection state:", peerConnection.connectionState);
-          if (peerConnection.connectionState === "connected") {
-            state.isConnected = true;
-            updateConnectionStatus(true);
-          } else if (
-            peerConnection.connectionState === "disconnected" ||
-            peerConnection.connectionState === "failed"
-          ) {
-            state.isConnected = false;
-            updateConnectionStatus(false);
-          }
-        };
-
-        state.remotePeerConnection = peerConnection;
-
-        // In a real implementation, exchange SDP offers through a signaling server
-        alert(
-          `To complete connection, you need a signaling server.\n\nPeer ID: ${remotePeerId}\n\nFor production:\n1. Deploy a signaling server (Socket.io/WebSocket)\n2. Both peers exchange SDP offers\n3. Exchange ICE candidates`,
-        );
       }
 
       // Update transcript display
@@ -902,6 +979,11 @@
 
       // End call
       function endCall() {
+        if (state.recognition) {
+          state.recognition.onend = null;
+          state.recognition.stop();
+          state.recognition = null;
+        }
         if (state.localStream) {
           state.localStream.getTracks().forEach((track) => track.stop());
         }
@@ -915,7 +997,15 @@
           state.deepgramSocket = null;
         }
 
+        if (state.socket && state.sessionId) {
+          state.socket.emit("end-call", { sessionId: state.sessionId });
+        }
+
         disableMicrophone();
+        state.remotePeerConnection = null;
+        state.sessionId = null;
+        state.isHost = false;
+        state.isConnected = false;
         updateConnectionStatus(false);
         state.transcripts = [];
         document.getElementById("transcriptionDisplay").innerHTML =
