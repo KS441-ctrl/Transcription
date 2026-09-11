@@ -196,22 +196,26 @@ io.on('connection', (socket) => {
   
   // ---- TRANSCRIPTION ----
   socket.on('add-transcript', (data) => {
-    const { sessionId, speaker, text } = data;
+    const { sessionId, speaker, text, isPartial = false, segmentId = null } = data;
     const session = peerSessions.get(sessionId);
     
     if (!session) return;
     
-    session.transcripts.push({
-      speaker: socket.id === session.host.id ? 'host' : 'guest',
-      text,
-      timestamp: Date.now()
-    });
+    if (!isPartial) {
+      session.transcripts.push({
+        speaker: socket.id === session.host.id ? 'host' : 'guest',
+        text,
+        timestamp: Date.now()
+      });
+    }
     
     // Broadcast to both peers
     io.to(sessionId).emit('transcript-updated', {
       senderId: socket.id,
       speaker: socket.id === session.host.id ? 'You' : 'Friend',
-      text
+      text,
+      isPartial,
+      segmentId
     });
   });
   

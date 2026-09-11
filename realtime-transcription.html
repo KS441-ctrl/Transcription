@@ -37,6 +37,20 @@
           grid-template-columns: 1fr;
         }
 
+        .transcription-box {
+          height: 58vh;
+          min-height: 360px;
+          padding: 14px 16px;
+          font-size: 1.08rem;
+          line-height: 1.5;
+          scroll-behavior: auto;
+        }
+
+        .transcript-entry {
+          margin-bottom: 14px;
+          padding-bottom: 10px;
+        }
+
         .transcript-panel {
           grid-column: 1;
           grid-row: 1;
@@ -156,6 +170,7 @@
         font-size: clamp(1.1rem, 2vw, 1.45rem);
         line-height: 1.65;
         scroll-behavior: smooth;
+        overscroll-behavior: contain;
         box-shadow: inset 0 18px 28px rgba(15, 23, 42, 0.35);
       }
 
@@ -463,6 +478,11 @@
         localAnalyser: null,
         isConnected: false,
         isMicEnabled: false,
+        recognitionSessionId: 0,
+        pendingIceCandidates: [],
+        remoteAudio: null,
+        followTranscript: true,
+        transcriptRenderTimer: null,
       };
 
       // Generate unique peer ID
@@ -503,19 +523,24 @@
         state.socket.on("webrtc-answer-received", async ({ fromId, answer }) => {
           if (fromId === state.socket.id || !state.remotePeerConnection) return;
           await state.remotePeerConnection.setRemoteDescription(answer);
+          await flushPendingIceCandidates();
           updateConnectionStatus(true);
         });
         state.socket.on("webrtc-ice-candidate", async ({ fromId, candidate }) => {
-          if (fromId === state.socket.id || !state.remotePeerConnection || !candidate) return;
+          if (fromId === state.socket.id || !candidate) return;
+          if (!state.remotePeerConnection || !state.remotePeerConnection.remoteDescription) {
+            state.pendingIceCandidates.push(candidate);
+            return;
+          }
           try {
             await state.remotePeerConnection.addIceCandidate(candidate);
           } catch (error) {
             console.debug("ICE candidate was not accepted:", error.message);
           }
         });
-        state.socket.on("transcript-updated", ({ senderId, speaker, text }) => {
+        state.socket.on("transcript-updated", ({ senderId, speaker, text, isPartial, segmentId }) => {
           if (senderId !== state.socket.id) {
-            updateTranscript(speaker, text);
+            updateTranscript(speaker, text, isPartial, segmentId);
           }
         });
         state.socket.on("peer-disconnected", () => {
@@ -548,7 +573,21 @@
       window.addEventListener("load", function () {
         state.peerId = "------";
         document.getElementById("peerId").value = state.peerId;
+        const transcriptDisplay = document.getElementById("transcriptionDisplay");
+        transcriptDisplay.addEventListener("scroll", () => {
+          const distanceFromBottom =
+            transcriptDisplay.scrollHeight -
+            transcriptDisplay.scrollTop -
+            transcriptDisplay.clientHeight;
+          state.followTranscript = distanceFromBottom < 32;
+        });
         connectToSignalingServer();
+      });
+
+      document.addEventListener("click", () => {
+        if (state.remoteAudio) {
+          state.remoteAudio.play().catch(() => {});
+        }
       });
 
       async function generateNewPeerId() {
@@ -646,6 +685,7 @@
         }
 
         state.recognition = new SpeechRecognition();
+        const recognitionSessionId = ++state.recognitionSessionId;
         state.recognition.continuous = true;
         state.recognition.interimResults = true;
         state.recognition.lang = "en-IN";
@@ -654,12 +694,15 @@
             const text = event.results[index][0].transcript.trim();
             if (text) {
               const isPartial = !event.results[index].isFinal;
-              updateTranscript(state.userName, text, isPartial);
-              if (!isPartial && state.socket && state.sessionId) {
+              const segmentId = `${recognitionSessionId}:${index}`;
+              updateTranscript(state.userName, text, isPartial, segmentId);
+              if (state.socket && state.sessionId) {
                 state.socket.emit("add-transcript", {
                   sessionId: state.sessionId,
                   speaker: state.userName,
                   text,
+                  isPartial,
+                  segmentId,
                 });
               }
             }
@@ -733,7 +776,17 @@
           iceServers: [
             { urls: "stun:stun.l.google.com:19302" },
             { urls: "stun:stun1.l.google.com:19302" },
+            {
+              urls: [
+                "turn:openrelay.metered.ca:80",
+                "turn:openrelay.metered.ca:443",
+                "turn:openrelay.metered.ca:443?transport=tcp",
+              ],
+              username: "openrelayproject",
+              credential: "openrelayproject",
+            },
           ],
+          iceCandidatePoolSize: 10,
         });
 
         state.localStream.getTracks().forEach((track) => {
@@ -744,8 +797,13 @@
           const audio = document.createElement("audio");
           audio.autoplay = true;
           audio.playsInline = true;
+          audio.setAttribute("playsinline", "");
           audio.srcObject = remoteStream;
           document.body.appendChild(audio);
+          state.remoteAudio = audio;
+          audio.play().catch(() => {
+            showInfo("Tap the page once to enable call audio.");
+          });
           if (state.audioContext) {
             state.analyser = state.audioContext.createAnalyser();
             state.audioContext.createMediaStreamSource(remoteStream).connect(state.analyser);
@@ -772,6 +830,18 @@
         return peerConnection;
       }
 
+      async function flushPendingIceCandidates() {
+        if (!state.remotePeerConnection?.remoteDescription) return;
+        const candidates = state.pendingIceCandidates.splice(0);
+        for (const candidate of candidates) {
+          try {
+            await state.remotePeerConnection.addIceCandidate(candidate);
+          } catch (error) {
+            console.debug("Queued ICE candidate was not accepted:", error.message);
+          }
+        }
+      }
+
       async function createOffer() {
         const peerConnection = createPeerConnection();
         const offer = await peerConnection.createOffer();
@@ -786,6 +856,7 @@
       async function handleOffer(offer) {
         const peerConnection = createPeerConnection();
         await peerConnection.setRemoteDescription(offer);
+        await flushPendingIceCandidates();
         const answer = await peerConnection.createAnswer();
         await peerConnection.setLocalDescription(answer);
         state.socket.emit("webrtc-answer", {
@@ -833,37 +904,91 @@
       }
 
       // Update transcript display
-      function updateTranscript(speaker, text, isPartial = false) {
-        // Remove previous partial
-        const existing = state.transcripts.find(
-          (t) => t.speaker === speaker && t.isPartial,
-        );
-        if (existing) {
-          if (!isPartial) {
-            existing.isPartial = false;
-            existing.text = text;
+      function updateTranscript(speaker, text, isPartial = false, segmentId = null) {
+        const display = document.getElementById("transcriptionDisplay");
+        if (!text.trim()) return;
+
+        if (isPartial) {
+          const liveEntry = state.transcripts.find(
+            (entry) => entry.speaker === speaker && entry.isPartial,
+          );
+          if (liveEntry) {
+            liveEntry.text = text;
+            liveEntry.segmentId = segmentId;
+          } else {
+            state.transcripts.push({ speaker, text, isPartial: true, segmentId });
           }
-        } else if (text.trim()) {
-          state.transcripts.push({ speaker, text, isPartial });
+          scheduleTranscriptRender(display, false);
+          return;
         }
 
-        renderTranscripts();
+        // Final text closes the live row, then becomes one permanent row.
+        state.transcripts = state.transcripts.filter(
+          (entry) => !(entry.speaker === speaker && entry.isPartial),
+        );
+        const normalizedText = text.replace(/\s+/g, " ").trim().toLowerCase();
+        const recentEntries = state.transcripts
+          .map((entry, index) => ({ entry, index }))
+          .filter(({ entry }) => entry.speaker === speaker && !entry.isPartial)
+          .slice(-8);
+        const previous = recentEntries[recentEntries.length - 1];
+        if (previous) {
+          const previousText = previous.entry.text.replace(/\s+/g, " ").trim().toLowerCase();
+          if (normalizedText === previousText || previousText.includes(normalizedText)) {
+            scheduleTranscriptRender(display, false, true);
+            return;
+          }
+          if (normalizedText.includes(previousText)) {
+            state.transcripts[previous.index] = { speaker, text, isPartial: false, segmentId };
+            scheduleTranscriptRender(display, state.followTranscript, true);
+            return;
+          }
+        }
+        state.transcripts.push({ speaker, text, isPartial: false, segmentId });
+        scheduleTranscriptRender(display, state.followTranscript, true);
       }
 
-      function renderTranscripts() {
-        const display = document.getElementById("transcriptionDisplay");
+      function scheduleTranscriptRender(display, follow, immediate = false) {
+        if (state.transcriptRenderTimer) {
+          clearTimeout(state.transcriptRenderTimer);
+          state.transcriptRenderTimer = null;
+        }
+        if (immediate) {
+          renderTranscripts(display, follow);
+          return;
+        }
+        state.transcriptRenderTimer = setTimeout(() => {
+          state.transcriptRenderTimer = null;
+          renderTranscripts(display, false);
+        }, 180);
+      }
+
+      function renderTranscripts(display = document.getElementById("transcriptionDisplay"), follow = false) {
+        const previousScrollTop = display.scrollTop;
         display.innerHTML = state.transcripts
           .map(
             (entry) =>
               `<div class="transcript-entry">
             <div class="speaker-name">👤 ${entry.speaker}</div>
             <div class="transcript-text ${entry.isPartial ? "transcript-partial" : ""}">
-              ${entry.text}
+              ${escapeTranscriptText(entry.text)}
             </div>
           </div>`,
           )
           .join("");
-        display.scrollTop = display.scrollHeight;
+        if (follow) {
+          requestAnimationFrame(() => {
+            display.scrollTo({ top: display.scrollHeight, behavior: "smooth" });
+          });
+        } else {
+          display.scrollTop = previousScrollTop;
+        }
+      }
+
+      function escapeTranscriptText(text) {
+        const element = document.createElement("div");
+        element.textContent = text;
+        return element.innerHTML;
       }
 
       // Monitor audio volume
@@ -936,12 +1061,20 @@
           state.remotePeerConnection.close();
         }
 
+        if (state.remoteAudio) {
+          state.remoteAudio.pause();
+          state.remoteAudio.srcObject = null;
+          state.remoteAudio.remove();
+          state.remoteAudio = null;
+        }
+
         if (state.socket && state.sessionId) {
           state.socket.emit("end-call", { sessionId: state.sessionId });
         }
 
         disableMicrophone();
         state.remotePeerConnection = null;
+        state.pendingIceCandidates = [];
         state.sessionId = null;
         state.isHost = false;
         state.isConnected = false;
