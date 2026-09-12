@@ -354,6 +354,27 @@
         font-weight: bold;
         margin-right: 8px;
       }
+
+      .audio-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-top: 8px;
+        padding: 8px 10px;
+        background: #0f172a;
+        border: 1px solid #334155;
+        border-radius: 6px;
+        color: #cbd5e1;
+        font-size: 0.8rem;
+      }
+
+      .audio-toggle button {
+        width: auto;
+        min-width: 82px;
+        padding: 6px 10px;
+        font-size: 0.75rem;
+      }
     </style>
   </head>
 
@@ -428,6 +449,17 @@
             <span class="icon">●</span> Not Connected
           </div>
         </div>
+
+        <div class="audio-toggle">
+          <span>Remote voice</span>
+          <button
+            id="remoteAudioToggle"
+            type="button"
+            aria-pressed="true"
+            onclick="toggleRemoteAudio()">
+            🔊 On
+          </button>
+        </div>
       </div>
 
       <div class="panel transcript-panel">
@@ -481,6 +513,7 @@
         recognitionSessionId: 0,
         pendingIceCandidates: [],
         remoteAudio: null,
+        remoteAudioEnabled: true,
         followTranscript: true,
         transcriptRenderTimer: null,
       };
@@ -585,10 +618,30 @@
       });
 
       document.addEventListener("click", () => {
-        if (state.remoteAudio) {
+        if (state.remoteAudio && state.remoteAudioEnabled) {
           state.remoteAudio.play().catch(() => {});
         }
       });
+
+      function toggleRemoteAudio() {
+        state.remoteAudioEnabled = !state.remoteAudioEnabled;
+        applyRemoteAudioState();
+      }
+
+      function applyRemoteAudioState() {
+        const button = document.getElementById("remoteAudioToggle");
+        if (state.remoteAudio) {
+          state.remoteAudio.muted = !state.remoteAudioEnabled;
+          if (state.remoteAudioEnabled) {
+            state.remoteAudio.play().catch(() => {});
+          } else {
+            state.remoteAudio.pause();
+          }
+        }
+        button.textContent = state.remoteAudioEnabled ? "🔊 On" : "🔇 Off";
+        button.setAttribute("aria-pressed", String(state.remoteAudioEnabled));
+        button.style.background = state.remoteAudioEnabled ? "#3b82f6" : "#475569";
+      }
 
       async function generateNewPeerId() {
         state.userName = document.getElementById("userName").value.trim() || "You";
@@ -798,12 +851,17 @@
           audio.autoplay = true;
           audio.playsInline = true;
           audio.setAttribute("playsinline", "");
+          audio.muted = !state.remoteAudioEnabled;
           audio.srcObject = remoteStream;
           document.body.appendChild(audio);
           state.remoteAudio = audio;
-          audio.play().catch(() => {
-            showInfo("Tap the page once to enable call audio.");
-          });
+          if (state.remoteAudioEnabled) {
+            audio.play().catch(() => {
+              showInfo("Tap the page once to enable call audio.");
+            });
+          } else {
+            audio.play().catch(() => {});
+          }
           if (state.audioContext) {
             state.analyser = state.audioContext.createAnalyser();
             state.audioContext.createMediaStreamSource(remoteStream).connect(state.analyser);
